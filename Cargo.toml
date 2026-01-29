@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = [
+  "rush",
+  "rush-interface",
+  "rush-macros",
+  "rush-plugin",
+  "rush-builtins/*",
+]

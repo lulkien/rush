@@ -1,0 +1,8 @@
+[package]
+name = "rush-plugin"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rush-interface = { path = "../rush-interface" }
+rush-macros = { path = "../rush-macros" }

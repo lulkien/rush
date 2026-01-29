@@ -1,0 +1,77 @@
+#![allow(unused)]
+
+use log::{info, warn};
+use std::{env, fs, path::PathBuf, sync::OnceLock};
+
+static USER_CONFIG_DIR: OnceLock<PathBuf> = OnceLock::new();
+static USER_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+static USER_CACHE_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+pub fn get_user_config_dir() -> &'static PathBuf {
+    USER_CONFIG_DIR.get_or_init(|| {
+        let config_dir = get_xdg_dir("XDG_CONFIG_HOME", ".config").join("rush");
+
+        info!("User config directory: {}", config_dir.display());
+        config_dir
+    })
+}
+
+pub fn get_user_data_dir() -> &'static PathBuf {
+    USER_DATA_DIR.get_or_init(|| {
+        let data_dir = get_xdg_dir("XDG_DATA_HOME", ".local/share").join("rush");
+
+        info!("User data directory: {}", data_dir.display());
+        data_dir
+    })
+}
+
+pub fn get_user_cache_dir() -> &'static PathBuf {
+    USER_CACHE_DIR.get_or_init(|| {
+        let cache_dir = get_xdg_dir("XDG_CACHE_HOME", ".cache").join("rush");
+
+        info!("User cache directory: {}", cache_dir.display());
+        cache_dir
+    })
+}
+
+fn get_xdg_dir(env_var: &str, fallback_relative: &str) -> PathBuf {
+    if let Ok(dir) = env::var(env_var) {
+        let path = PathBuf::from(dir);
+        if path.is_absolute() {
+            return path;
+        }
+        warn!("{} is not an absolute path: {}", env_var, path.display());
+    }
+
+    let home_dir = get_home_dir();
+    home_dir.join(fallback_relative)
+}
+
+fn get_home_dir() -> PathBuf {
+    env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| {
+        panic!(
+            "HOME environment variable not set. The shell cannot function without a home directory."
+        );
+    })
+}
+
+pub fn init_shell() -> anyhow::Result<()> {
+    // Init logger
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+
+    // Create user config dir on first run
+    create_user_config_dir();
+
+    Ok(())
+}
+
+fn create_user_config_dir() -> anyhow::Result<()> {
+    let user_config_dir = get_user_config_dir();
+
+    if !user_config_dir.exists() {
+        fs::create_dir(user_config_dir)?;
+        info!("Create {}", user_config_dir.display());
+    }
+
+    Ok(())
+}
