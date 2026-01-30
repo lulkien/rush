@@ -2,37 +2,41 @@ use std::{
     collections::HashMap,
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, OnceLock, RwLock},
+    sync::{OnceLock, RwLock},
 };
 
 use anyhow::Context;
 use log::{error, info};
 use rush_interface::CommandRef;
 
-use crate::init::get_user_config_dir;
+use crate::{commands, executor::ExecutorWrapper, init::get_user_config_dir};
+
+// -------------------------------- Plugin registry --------------------------------
+
+const SYSTEM_PLUGINS_DIR: &str = "/usr/share/rush/builtins";
 
 #[derive(Default)]
-struct PluginRegistry(HashMap<String, Arc<CommandRef>>);
+struct PluginRegistry(HashMap<String, CommandRef>);
+
 static PLUGIN_REGISTRY: OnceLock<RwLock<PluginRegistry>> = OnceLock::new();
 
-pub(crate) fn start_plugin_subsystem() -> anyhow::Result<()> {
-    let mut plugins_loaded = 0;
+fn get_plugin_registry() -> &'static RwLock<PluginRegistry> {
+    PLUGIN_REGISTRY.get_or_init(|| RwLock::new(PluginRegistry::default()))
+}
 
-    let system_builtins_dir: PathBuf = "/usr/share/rush/builtins".into();
-    plugins_loaded += load_plugins_from_directory(&system_builtins_dir).unwrap_or_default();
+fn register_plugin(name: String, command_ref: CommandRef) -> anyhow::Result<()> {
+    let registry = get_plugin_registry();
 
-    let user_plugins_dir = get_user_config_dir().join("plugins");
-    plugins_loaded += load_plugins_from_directory(&user_plugins_dir).unwrap_or_default();
+    let mut registry = registry
+        .write()
+        .map_err(|_| anyhow::anyhow!("Plugin registry lock poisoned"))?;
 
-    info!("Loaded {} plugins", plugins_loaded);
-
+    registry.0.insert(name, command_ref);
     Ok(())
 }
 
-pub(crate) fn get_plugin(plugin_name: &str) -> anyhow::Result<Arc<CommandRef>> {
-    let registry = PLUGIN_REGISTRY
-        .get()
-        .context("Plugin registry not initialized")?;
+pub(crate) fn get_plugin(plugin_name: &str) -> anyhow::Result<CommandRef> {
+    let registry = get_plugin_registry();
 
     let registry = registry
         .read()
@@ -43,6 +47,24 @@ pub(crate) fn get_plugin(plugin_name: &str) -> anyhow::Result<Arc<CommandRef>> {
         .get(plugin_name)
         .cloned()
         .with_context(|| format!("Plugin '{}' not found", plugin_name))
+}
+
+// -------------------------------- Plugin subsystem --------------------------------
+
+pub(crate) fn start_plugin_subsystem() -> anyhow::Result<()> {
+    let mut plugins_loaded = 0;
+
+    let system_builtins_dir: PathBuf = SYSTEM_PLUGINS_DIR.into();
+    plugins_loaded += load_plugins_from_directory(&system_builtins_dir).unwrap_or_default();
+
+    let user_plugins_dir = get_user_config_dir().join("plugins");
+    plugins_loaded += load_plugins_from_directory(&user_plugins_dir).unwrap_or_default();
+
+    info!("Loaded {} plugins", plugins_loaded);
+
+    update_shell_commands()?;
+
+    Ok(())
 }
 
 fn load_plugins_from_directory(path: &Path) -> anyhow::Result<usize> {
@@ -103,17 +125,17 @@ fn load_plugin(path: &Path) -> anyhow::Result<()> {
     module.load()();
     let plugin_name = module.info()().name;
 
-    register_plugin(plugin_name.into(), Arc::new(module))?;
+    register_plugin(plugin_name.into(), module)?;
     Ok(())
 }
 
-fn register_plugin(name: String, command_ref: Arc<CommandRef>) -> anyhow::Result<()> {
-    let registry = PLUGIN_REGISTRY.get_or_init(|| RwLock::new(PluginRegistry::default()));
+fn update_shell_commands() -> anyhow::Result<()> {
+    if let Ok(plugin) = get_plugin("rush_prompt") {
+        let mut shell_commands = commands::lock_shell_commands_write()?;
 
-    let mut registry = registry
-        .write()
-        .map_err(|_| anyhow::anyhow!("Plugin registry lock poisoned"))?;
+        shell_commands.set_prompt(ExecutorWrapper::new(plugin.exec()));
+    }
 
-    registry.0.insert(name, command_ref);
     Ok(())
 }
+

@@ -75,3 +75,4 @@ fn create_user_config_dir() -> anyhow::Result<()> {
 
     Ok(())
 }
+

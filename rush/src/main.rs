@@ -1,8 +1,10 @@
 use abi_stable::std_types::RVec;
 
-use crate::{init::init_shell, plugin::{get_plugin, start_plugin_subsystem}};
-
+mod builtins;
+mod commands;
+mod executor;
 mod init;
+mod input;
 mod plugin;
 
 fn main() {
@@ -12,10 +14,14 @@ fn main() {
 }
 
 fn start_shell() -> anyhow::Result<()> {
-    init_shell()?;
-    start_plugin_subsystem()?;
+    init::init_shell()?;
+    plugin::start_plugin_subsystem()?;
 
-    get_plugin("pwd")?.exec()(RVec::new());
+    loop {
+        commands::lock_shell_commands_read()?.execute_command("rush_prompt", RVec::new());
 
-    Ok(())
+        let input = input::get_user_input()?;
+        executor::execute_user_input(&input);
+    }
 }
+

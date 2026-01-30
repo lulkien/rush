@@ -1,6 +1,9 @@
 use abi_stable::{
-    StableAbi, declare_root_module_statics, library::RootModule, package_version_strings,
-    sabi_types::VersionStrings, std_types::{RString, RVec},
+    StableAbi, declare_root_module_statics,
+    library::RootModule,
+    package_version_strings,
+    sabi_types::VersionStrings,
+    std_types::{RString, RVec},
 };
 
 #[repr(C)]
@@ -25,10 +28,19 @@ pub struct CommandInfo {
 }
 
 #[repr(C)]
-#[derive(StableAbi, Debug, Clone)]
+#[derive(StableAbi, Debug, Clone, Default)]
 pub struct ExecResult {
     pub status: u8,
     pub message: RString,
+}
+
+impl ExecResult {
+    pub fn new(status: u8, message: &str) -> Self {
+        Self {
+            status,
+            message: message.into(),
+        }
+    }
 }
 
 impl RootModule for CommandRef {
@@ -38,3 +50,4 @@ impl RootModule for CommandRef {
     const NAME: &'static str = "rush_plugin";
     const VERSION_STRINGS: VersionStrings = package_version_strings!();
 }
+
