@@ -458,6 +458,7 @@ dependencies = [
  "anyhow",
  "env_logger",
  "log",
+ "paste",
  "rush-interface",
  "rush-macros",
 ]

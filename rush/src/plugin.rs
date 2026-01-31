@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     sync::{OnceLock, RwLock},
 };
 
@@ -9,11 +9,9 @@ use anyhow::Context;
 use log::{error, info};
 use rush_interface::CommandRef;
 
-use crate::{commands, executor::ExecutorWrapper, init::get_user_config_dir};
+use crate::{commands, env::read_rush_data_dirs, executor::ExecutorWrapper};
 
 // -------------------------------- Plugin registry --------------------------------
-
-const SYSTEM_PLUGINS_DIR: &str = "/usr/share/rush/builtins";
 
 #[derive(Default)]
 struct PluginRegistry(HashMap<String, CommandRef>);
@@ -51,14 +49,13 @@ pub(crate) fn get_plugin(plugin_name: &str) -> anyhow::Result<CommandRef> {
 
 // -------------------------------- Plugin subsystem --------------------------------
 
-pub(crate) fn start_plugin_subsystem() -> anyhow::Result<()> {
+pub(crate) fn init_module() -> anyhow::Result<()> {
     let mut plugins_loaded = 0;
 
-    let system_builtins_dir: PathBuf = SYSTEM_PLUGINS_DIR.into();
-    plugins_loaded += load_plugins_from_directory(&system_builtins_dir).unwrap_or_default();
-
-    let user_plugins_dir = get_user_config_dir().join("plugins");
-    plugins_loaded += load_plugins_from_directory(&user_plugins_dir).unwrap_or_default();
+    read_rush_data_dirs()?.iter().for_each(|path| {
+        info!("{}", &path.join("plugins").display());
+        plugins_loaded += load_plugins_from_directory(&path.join("plugins")).unwrap_or_default()
+    });
 
     info!("Loaded {} plugins", plugins_loaded);
 
@@ -138,4 +135,3 @@ fn update_shell_commands() -> anyhow::Result<()> {
 
     Ok(())
 }
-
