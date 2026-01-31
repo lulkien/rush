@@ -27,7 +27,7 @@ fn init_default_data_dirs() -> anyhow::Result<()> {
 }
 
 fn init_default_config_dirs() -> anyhow::Result<()> {
-    let mut config_dirs = write_rush_data_dirs()?;
+    let mut config_dirs = write_rush_config_dirs()?;
     let mut defaults_dirs: Vec<PathBuf> = vec!["/etc/rush".into()];
 
     config_dirs.append(&mut defaults_dirs);

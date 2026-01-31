@@ -7,7 +7,7 @@ use abi_stable::std_types::{RString, RVec};
 use log::debug;
 use rush_interface::ExecResult;
 
-use crate::{commands::lock_shell_commands_read, plugin::get_plugin};
+use crate::{commands::read_shell_commands, plugin::get_plugin};
 
 pub struct ExecutorWrapper(extern "C" fn(RVec<RString>) -> ExecResult);
 
@@ -35,7 +35,7 @@ pub fn execute_user_input(input: &str) {
 
     let status = match get_plugin(&cmd) {
         Ok(command) => command.exec()(args),
-        Err(_e) => match lock_shell_commands_read() {
+        Err(_e) => match read_shell_commands() {
             Ok(guard) => guard.execute_command(&cmd, args),
             Err(e) => ExecResult::new(101, &format!("{cmd}: {e}")),
         },

@@ -39,13 +39,13 @@ fn get_shell_commands() -> &'static RwLock<ShellCommands> {
     SHELL_COMMANDS.get_or_init(|| RwLock::new(ShellCommands::default()))
 }
 
-pub fn lock_shell_commands_read() -> anyhow::Result<RwLockReadGuard<'static, ShellCommands>> {
+pub fn read_shell_commands() -> anyhow::Result<RwLockReadGuard<'static, ShellCommands>> {
     get_shell_commands()
         .read()
         .map_err(|_| anyhow::anyhow!("Shell commands read lock poisoned"))
 }
 
-pub fn lock_shell_commands_write() -> anyhow::Result<RwLockWriteGuard<'static, ShellCommands>> {
+pub fn write_shell_commands() -> anyhow::Result<RwLockWriteGuard<'static, ShellCommands>> {
     get_shell_commands()
         .write()
         .map_err(|_| anyhow::anyhow!("Shell commands write lock poisoned"))

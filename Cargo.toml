@@ -2,8 +2,16 @@
 resolver = "2"
 members = [
   "rush",
+  "rush-builtins/*",
   "rush-interface",
   "rush-macros",
   "rush-plugin",
-  "rush-builtins/*",
 ]
+
+[profile.release]
+opt-level = 3
+debug = false
+strip = true
+lto = "fat"
+incremental = false
+codegen-units = 1

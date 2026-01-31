@@ -1,8 +1,9 @@
 #![allow(unused)]
 
+use std::{env, fs, path::PathBuf, sync::OnceLock};
+
 use env_logger::{Builder, Env};
 use log::{debug, info, warn};
-use std::{env, fs, path::PathBuf, sync::OnceLock};
 
 macro_rules! define_user_dir {
     ($name:ident, $static_name:ident, $path_fragment:expr, $doc:expr) => {
