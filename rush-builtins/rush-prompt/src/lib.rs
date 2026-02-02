@@ -3,7 +3,7 @@ use colored::*;
 use rush_plugin::*;
 use std::{
     env,
-    io::{self, Write},
+    io::{self, Write, stdout},
     path::PathBuf,
     sync::OnceLock,
 };
@@ -15,10 +15,10 @@ static HOME_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 fn get_plugin_info() -> &'static CommandInfo {
     COMMAND_INFO.get_or_init(|| CommandInfo {
-        name: "rush_prompt".into(),
-        description: "Print prompt".into(),
+        name: env!("CARGO_PKG_NAME").into(),
+        description: env!("CARGO_PKG_DESCRIPTION").into(),
+        version: env!("CARGO_PKG_VERSION").into(),
         usage: "rush_prompt".into(),
-        version: "0.1.0".into(),
     })
 }
 
@@ -115,8 +115,8 @@ impl PromptBuilder {
 
     /// Build and print the prompt
     fn display(&self) -> io::Result<()> {
-        print!("{}", self.build());
-        io::stdout().flush()
+        stdout().write_all(self.build().to_string().as_bytes())?;
+        stdout().flush()
     }
 }
 

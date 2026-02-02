@@ -48,7 +48,7 @@ define_user_dir!(
 
 pub fn init_module() -> anyhow::Result<()> {
     // Init logger
-    Builder::from_env(Env::default().default_filter_or("debug")).init();
+    Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let dirs = [
         get_user_data_dir()?,

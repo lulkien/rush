@@ -23,6 +23,8 @@ pub fn start_shell() -> anyhow::Result<()> {
     // Init plugin module
     plugin::init_module()?;
 
+    executor::init_module()?;
+
     let elapsed = start.elapsed();
     info!("Shell initialization took: {} µs", elapsed.as_micros());
 

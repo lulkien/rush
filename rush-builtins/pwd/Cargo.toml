@@ -1,5 +1,6 @@
 [package]
 name = "pwd"
+description = "Print working directory"
 version = "0.1.0"
 edition = "2024"
 

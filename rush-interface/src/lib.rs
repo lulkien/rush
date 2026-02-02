@@ -23,8 +23,8 @@ pub struct Command {
 pub struct CommandInfo {
     pub name: RString,
     pub description: RString,
-    pub usage: RString,
     pub version: RString,
+    pub usage: RString,
 }
 
 #[repr(C)]

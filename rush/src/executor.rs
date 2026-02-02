@@ -1,13 +1,20 @@
 use std::{
-    io::{Write, stderr},
+    io::{Write, stderr, stdout},
     str::FromStr,
+    sync::OnceLock,
 };
 
 use abi_stable::std_types::{RString, RVec};
-use log::debug;
+use log::{debug, warn};
 use rush_interface::ExecResult;
 
 use crate::plugin::get_plugin;
+
+static SHELL_CMD: OnceLock<Vec<&'static str>> = OnceLock::new();
+
+fn get_shell_cmd() -> &'static Vec<&'static str> {
+    SHELL_CMD.get_or_init(|| vec!["plugin_info", "plugin_version", "plugin_usage"])
+}
 
 pub fn execute_user_input(input: &str) {
     if input.is_empty() {
@@ -21,12 +28,26 @@ pub fn execute_user_input(input: &str) {
 
     let cmd = args.remove(0);
 
-    let status = execute_command(&cmd, args);
+    let status = if get_shell_cmd().contains(&cmd.as_str()) {
+        if args.is_empty() {
+            ExecResult::new(100, "No argument")
+        } else {
+            // Consume next argument
+            let plugin_name = args.remove(0);
+
+            if !args.is_empty() {
+                warn!("{}: Too many arguments", cmd);
+            }
+            execute_shell_command(&cmd, plugin_name.as_str())
+        }
+    } else {
+        execute_command(&cmd, args)
+    };
 
     debug!("{:?}", status);
 
     if status.code.ne(&0) {
-        let _ = stderr().write_all(status.message.as_bytes());
+        let _ = stderr().write_all(format!("{}\n", status.message).as_bytes());
     }
 }
 
@@ -35,4 +56,29 @@ pub fn execute_command(cmd: &str, argv: RVec<RString>) -> ExecResult {
         Ok(plugin) => plugin.exec()(argv),
         Err(e) => ExecResult::new(101, &format!("{e}")),
     }
+}
+
+fn execute_shell_command(shell_cmd: &str, plugin_name: &str) -> ExecResult {
+    let plugin = match get_plugin(plugin_name) {
+        Ok(plugin) => plugin,
+        Err(e) => return ExecResult::new(101, &format!("{e}")),
+    };
+
+    let output = match shell_cmd {
+        "plugin_version" => plugin.version()(),
+        "plugin_usage" => plugin.usage()(),
+        _ => return ExecResult::new(102, &format!("{}: Unimplemented shell command", shell_cmd)),
+    };
+
+    stdout()
+        .write_all(format!("{}\n", output).as_bytes())
+        .unwrap();
+
+    ExecResult::default()
+}
+
+pub fn init_module() -> anyhow::Result<()> {
+    get_shell_cmd();
+
+    Ok(())
 }

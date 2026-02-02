@@ -6,10 +6,10 @@ static COMMAND_INFO: OnceLock<CommandInfo> = OnceLock::new();
 
 fn get_plugin_info() -> &'static CommandInfo {
     COMMAND_INFO.get_or_init(|| CommandInfo {
-        name: "exit".into(),
-        description: "Exit from current shell".into(),
+        name: env!("CARGO_PKG_NAME").into(),
+        description: env!("CARGO_PKG_DESCRIPTION").into(),
+        version: env!("CARGO_PKG_VERSION").into(),
         usage: "exit".into(),
-        version: "0.1.0".into(),
     })
 }
 
