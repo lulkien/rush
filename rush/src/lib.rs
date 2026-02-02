@@ -3,8 +3,6 @@ use std::time::Instant;
 use abi_stable::std_types::RVec;
 use log::info;
 
-mod builtins;
-mod commands;
 mod env;
 mod executor;
 mod init;
@@ -37,7 +35,7 @@ pub fn start_shell() -> anyhow::Result<()> {
 fn enter_main_loop() -> anyhow::Result<()> {
     // Enter main loop
     loop {
-        commands::read_shell_commands()?.execute_command("rush_prompt", RVec::new());
+        executor::execute_command("rush_prompt", RVec::new());
 
         let input = input::get_user_input()?;
         executor::execute_user_input(&input);

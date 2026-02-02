@@ -1,18 +1,14 @@
 use abi_stable::std_types::{RString, RVec};
 use rush_plugin::*;
-use std::{
-    env,
-    io::{Write, stdout},
-    sync::OnceLock,
-};
+use std::{process, sync::OnceLock};
 
 static COMMAND_INFO: OnceLock<CommandInfo> = OnceLock::new();
 
 fn get_plugin_info() -> &'static CommandInfo {
     COMMAND_INFO.get_or_init(|| CommandInfo {
-        name: "pwd".into(),
-        description: "Print working directory".into(),
-        usage: "pwd".into(),
+        name: "exit".into(),
+        description: "Exit from current shell".into(),
+        usage: "exit".into(),
         version: "0.1.0".into(),
     })
 }
@@ -34,16 +30,7 @@ pub fn version() -> RString {
 
 #[exec]
 pub fn exec(_args: RVec<RString>) -> ExecResult {
-    match env::current_dir() {
-        Ok(path) => match stdout().write_all(format!("{}\n", path.to_string_lossy()).as_bytes()) {
-            Ok(_) => {
-                stdout().flush().unwrap();
-                ExecResult::default()
-            }
-            Err(e) => ExecResult::new(1, &format!("{}", e)),
-        },
-        Err(e) => ExecResult::new(1, &e.to_string()),
-    }
+    process::exit(0);
 }
 
 #[load]

@@ -227,6 +227,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "exit"
+version = "0.1.0"
+dependencies = [
+ "abi_stable",
+ "rush-plugin",
+]
+
+[[package]]
 name = "generational-arena"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"

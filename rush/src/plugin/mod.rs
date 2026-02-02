@@ -7,8 +7,6 @@ use rush_interface::CommandRef;
 
 pub use lazy::get_plugin;
 
-use crate::{commands::write_shell_commands, executor::ExecutorWrapper};
-
 #[allow(unused)]
 struct PluginMetadata {
     name: String,
@@ -31,19 +29,6 @@ impl PluginMetadata {
 
 pub fn init_module() -> anyhow::Result<()> {
     lazy::discover_plugins()?;
-
-    update_shell_commands()?;
-
-    Ok(())
-}
-
-fn update_shell_commands() -> anyhow::Result<()> {
-    let mut writer = write_shell_commands()?;
-
-    // Load prompt
-    if let Ok(plugin) = lazy::get_plugin("rush_prompt") {
-        writer.set_prompt(ExecutorWrapper::new(plugin.exec()));
-    }
 
     Ok(())
 }

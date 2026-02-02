@@ -30,14 +30,14 @@ pub struct CommandInfo {
 #[repr(C)]
 #[derive(StableAbi, Debug, Clone, Default)]
 pub struct ExecResult {
-    pub status: u8,
+    pub code: u8,
     pub message: RString,
 }
 
 impl ExecResult {
-    pub fn new(status: u8, message: &str) -> Self {
+    pub fn new(code: u8, message: &str) -> Self {
         Self {
-            status,
+            code,
             message: message.into(),
         }
     }
