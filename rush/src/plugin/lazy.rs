@@ -38,6 +38,21 @@ pub fn get_plugin(name: &str) -> anyhow::Result<Arc<CommandRef>> {
     plugin.ok_or_else(|| anyhow::anyhow!("{}: plugin failed to load", name))
 }
 
+pub fn reload_plugin(name: &str) -> anyhow::Result<Arc<CommandRef>> {
+    let mut registry_writer = write_plugin_registry()?;
+
+    let metadata_mut = registry_writer
+        .borrow_mut(name)
+        .ok_or_else(|| anyhow::anyhow!("{}: plugin not found", name))?;
+
+    metadata_mut.plugin = None;
+
+    let plugin = load_plugin(&metadata_mut.path);
+    metadata_mut.plugin = plugin.clone();
+
+    plugin.ok_or_else(|| anyhow::anyhow!("{}: plugin failed to load", name))
+}
+
 pub(super) fn discover_plugins() -> anyhow::Result<()> {
     let mut registered_count = 0;
 

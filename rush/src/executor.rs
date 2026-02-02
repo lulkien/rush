@@ -8,12 +8,19 @@ use abi_stable::std_types::{RString, RVec};
 use log::{debug, warn};
 use rush_interface::ExecResult;
 
-use crate::plugin::get_plugin;
+use crate::plugin::{self, get_plugin};
 
 static SHELL_CMD: OnceLock<Vec<&'static str>> = OnceLock::new();
 
 fn get_shell_cmd() -> &'static Vec<&'static str> {
-    SHELL_CMD.get_or_init(|| vec!["plugin_info", "plugin_version", "plugin_usage"])
+    SHELL_CMD.get_or_init(|| {
+        vec![
+            "plugin_info",
+            "plugin_reload",
+            "plugin_usage",
+            "plugin_version",
+        ]
+    })
 }
 
 pub fn execute_user_input(input: &str) {
@@ -64,9 +71,16 @@ fn execute_shell_command(shell_cmd: &str, plugin_name: &str) -> ExecResult {
         Err(e) => return ExecResult::new(101, &format!("{e}")),
     };
 
+    // FIXME: no need to load plugin first in case of plugin_reload
     let output = match shell_cmd {
         "plugin_version" => plugin.version()(),
         "plugin_usage" => plugin.usage()(),
+        "plugin_reload" => {
+            drop(plugin);
+            plugin::reload_plugin(plugin_name)
+                .map(|_| format!("{}: Plugin reloaded", plugin_name).into())
+                .unwrap_or_else(|err_value| format!("{}", err_value).into())
+        }
         _ => return ExecResult::new(102, &format!("{}: Unimplemented shell command", shell_cmd)),
     };
 
