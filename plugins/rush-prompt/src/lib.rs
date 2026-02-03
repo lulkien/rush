@@ -115,7 +115,7 @@ impl PromptBuilder {
 
     /// Build and print the prompt
     fn display(&self) -> io::Result<()> {
-        stdout().write_all(self.build().to_string().as_bytes())?;
+        stdout().write_all(self.build().as_bytes())?;
         stdout().flush()
     }
 }
@@ -195,10 +195,7 @@ pub fn exec(_args: RVec<RString>) -> ExecResult {
     let indicator = if is_root { "#" } else { "$" };
     prompt.add_with_format(|| Some(indicator.to_string()), |ind| ind.to_string());
 
-    // Display the prompt
-    prompt.display().unwrap();
-
-    ExecResult::default()
+    ExecResult::new(0, &prompt.build())
 }
 
 #[load]

@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
   "rush",
-  "rush-builtins/*",
+  "plugins/*",
   "rush-interface",
   "rush-macros",
   "rush-plugin",

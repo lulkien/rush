@@ -1,7 +1,12 @@
-use std::time::Instant;
+use std::{
+    fs::File,
+    io::{Write, stdout},
+    time::Instant,
+};
 
 use abi_stable::std_types::RVec;
-use log::info;
+use log::{error, info};
+use rustyline::error::ReadlineError;
 
 mod env;
 mod executor;
@@ -23,23 +28,55 @@ pub fn start_shell() -> anyhow::Result<()> {
     // Init plugin module
     plugin::init_module()?;
 
+    // Init command executor module
     executor::init_module()?;
+
+    // Init user input module
+    input::init_module()?;
 
     let elapsed = start.elapsed();
     info!("Shell initialization took: {} µs", elapsed.as_micros());
 
-    //
-    enter_main_loop()?;
+    enter_repl()?;
 
-    unreachable!()
+    let history_file = init::get_user_cache_dir()?.join(".history");
+    input::save_history(&history_file)?;
+
+    stdout()
+        .write_all(b"quit\n")
+        .map_err(|_| anyhow::anyhow!("Can't write to stdout"))?;
+    stdout()
+        .flush()
+        .map_err(|_| anyhow::anyhow!("Can't flush stdout"))?;
+
+    Ok(())
 }
 
-fn enter_main_loop() -> anyhow::Result<()> {
+fn enter_repl() -> anyhow::Result<()> {
+    let history_file = init::get_user_cache_dir()?.join(".history");
+    let _ = File::create_new(&history_file);
+
+    input::load_history(&history_file)?;
+
     // Enter main loop
     loop {
-        executor::execute_command("rush_prompt", RVec::new());
+        let prompt = executor::execute_command("rush_prompt", RVec::new()).message;
 
-        let input = input::get_user_input()?;
-        executor::execute_user_input(&input);
+        match input::readline(&prompt) {
+            Ok(line) => {
+                input::add_history(&line)?;
+                executor::execute_user_input(&line);
+            }
+            Err(ReadlineError::Interrupted) => stdout().write_all(b"^C").unwrap(),
+            Err(ReadlineError::Eof) => {
+                break;
+            }
+            Err(e) => {
+                error!("{}", e);
+                break;
+            }
+        }
     }
+
+    Ok(()) // It's not ok but fine, we gonna handle later
 }
