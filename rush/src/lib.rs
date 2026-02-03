@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{Write, stdout},
+    io::{Write, stderr},
     time::Instant,
 };
 
@@ -42,12 +42,7 @@ pub fn start_shell() -> anyhow::Result<()> {
     let history_file = init::get_user_cache_dir()?.join(".history");
     input::save_history(&history_file)?;
 
-    stdout()
-        .write_all(b"quit\n")
-        .map_err(|_| anyhow::anyhow!("Can't write to stdout"))?;
-    stdout()
-        .flush()
-        .map_err(|_| anyhow::anyhow!("Can't flush stdout"))?;
+    writeln!(stderr(), "quit").map_err(|_| anyhow::anyhow!("Failed to write to stderr"))?;
 
     Ok(())
 }
@@ -67,7 +62,10 @@ fn enter_repl() -> anyhow::Result<()> {
                 input::add_history(&line)?;
                 executor::execute_user_input(&line);
             }
-            Err(ReadlineError::Interrupted) => stdout().write_all(b"^C").unwrap(),
+            Err(ReadlineError::Interrupted) => {
+                writeln!(stderr(), "^C")
+                    .map_err(|_| anyhow::anyhow!("Failed to write to stderr"))?;
+            }
             Err(ReadlineError::Eof) => {
                 break;
             }

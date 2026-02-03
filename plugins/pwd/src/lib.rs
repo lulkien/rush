@@ -35,11 +35,8 @@ pub fn version() -> RString {
 #[exec]
 pub fn exec(_args: RVec<RString>) -> ExecResult {
     match env::current_dir() {
-        Ok(path) => match stdout().write_all(format!("{}\n", path.to_string_lossy()).as_bytes()) {
-            Ok(_) => {
-                stdout().flush().unwrap();
-                ExecResult::default()
-            }
+        Ok(path) => match writeln!(stdout(), "{}", path.to_string_lossy()) {
+            Ok(_) => ExecResult::default(),
             Err(e) => ExecResult::new(1, &format!("{}", e)),
         },
         Err(e) => ExecResult::new(1, &e.to_string()),

@@ -4,14 +4,12 @@ use rush_plugin::*;
 use std::{
     env,
     io::{self, Write, stdout},
-    path::PathBuf,
     sync::OnceLock,
 };
 
 static COMMAND_INFO: OnceLock<CommandInfo> = OnceLock::new();
 static HOSTNAME: OnceLock<Option<String>> = OnceLock::new();
 static USERNAME: OnceLock<Option<String>> = OnceLock::new();
-static HOME_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 fn get_plugin_info() -> &'static CommandInfo {
     COMMAND_INFO.get_or_init(|| CommandInfo {
@@ -20,10 +18,6 @@ fn get_plugin_info() -> &'static CommandInfo {
         version: env!("CARGO_PKG_VERSION").into(),
         usage: "rush_prompt".into(),
     })
-}
-
-fn get_home_path() -> &'static Option<PathBuf> {
-    HOME_PATH.get_or_init(|| env::var("HOME").map(PathBuf::from).ok())
 }
 
 fn get_hostname() -> &'static Option<String> {
@@ -115,8 +109,7 @@ impl PromptBuilder {
 
     /// Build and print the prompt
     fn display(&self) -> io::Result<()> {
-        stdout().write_all(self.build().as_bytes())?;
-        stdout().flush()
+        write!(stdout(), "{}", self.build())
     }
 }
 
@@ -139,7 +132,7 @@ pub fn version() -> RString {
 pub fn exec(_args: RVec<RString>) -> ExecResult {
     let username = get_username().clone();
     let hostname = get_hostname().clone();
-    let home_path = get_home_path().clone();
+    let home_path = dirs::home_dir();
 
     let is_root = username.as_deref() == Some("root");
 
@@ -201,7 +194,6 @@ pub fn exec(_args: RVec<RString>) -> ExecResult {
 #[load]
 pub fn load() {
     get_plugin_info();
-    get_home_path();
     get_hostname();
     get_username();
 }
