@@ -120,7 +120,7 @@ pub fn info() -> CommandInfo {
 
 #[desc]
 pub fn desc() -> RString {
-    get_plugin_info().version.clone()
+    get_plugin_info().description.clone()
 }
 
 #[help]

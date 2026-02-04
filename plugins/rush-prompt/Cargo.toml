@@ -1,6 +1,7 @@
 [package]
 name = "rush-prompt"
-description = "Contruct a prompt and return as an ExecResult"
+description = """Contruct a prompt and return as an ExecResult
+This won't print anything to stdout"""
 version = "0.1.0"
 edition = "2024"
 

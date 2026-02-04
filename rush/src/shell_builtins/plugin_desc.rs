@@ -1,11 +1,13 @@
 use std::io::{Write, stderr, stdout};
 
+use abi_stable::std_types::{RString, RVec};
 use rush_interface::ExecResult;
 
 use crate::plugin;
 
 use super::BuiltinCommand;
 
+static BUILTIN_NAME: &str = "plugin-desc";
 static HELP_STRING: &str = "plugin-desc plugin_name";
 static DESC_STRING: &str = "plugin-desc is a shell built-in";
 
@@ -24,12 +26,25 @@ impl BuiltinCommand for Command {
         env!("CARGO_PKG_VERSION")
     }
 
-    fn exec(&self, plugin: &str) -> rush_interface::ExecResult {
+    fn exec(&self, mut args: RVec<RString>) -> rush_interface::ExecResult {
+        if args.is_empty() || args.len() > 1 {
+            return ExecResult::new(
+                1,
+                &format!(
+                    "{}: expected 1 argument, found {}",
+                    BUILTIN_NAME,
+                    args.len()
+                ),
+            );
+        }
+
+        let plugin = args.remove(0);
+
         if let Ok(builtins_reg) = super::builtins_registry()
-            && builtins_reg.contains(plugin)
+            && builtins_reg.contains(&plugin)
         {
             let output = builtins_reg
-                .get_command(plugin)
+                .get_command(&plugin)
                 .expect("Cannot get built-in command")
                 .desc()
                 .to_owned();
@@ -38,13 +53,13 @@ impl BuiltinCommand for Command {
 
             ExecResult::default()
         } else {
-            match plugin::get_plugin(plugin) {
+            match plugin::get_plugin(&plugin) {
                 Ok(plugin) => {
                     let output = plugin.desc()().into_string();
                     writeln!(stdout(), "{output}").expect("Failed to write to stdout");
                     ExecResult::default()
                 }
-                Err(e) => ExecResult::new(101, &format!("{e}")),
+                Err(e) => ExecResult::new(101, &format!("{}: {e}", BUILTIN_NAME)),
             }
         }
     }
