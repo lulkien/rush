@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-abi_stable = "0.11"
-anyhow = "1.0"
-env_logger = "0.11"
+abi_stable = "0.11.3"
+anyhow = "1.0.100"
+env_logger = "0.11.8"
 log = { version = "0.4.29", features = ["serde", "std"] }
-paste = "1.0"
+paste = "1.0.15"
 rush-interface = { path = "../rush-interface" }
 rush-macros = { path = "../rush-macros" }
-rustyline = "17.0"
+rustyline = "17.0.2"

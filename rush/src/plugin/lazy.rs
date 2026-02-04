@@ -30,7 +30,7 @@ pub fn get_plugin(name: &str) -> anyhow::Result<Arc<CommandRef>> {
 
     let metadata_mut = registry_writer
         .borrow_mut(name)
-        .ok_or_else(|| anyhow::anyhow!("{}: plugin not found", name))?;
+        .ok_or_else(|| anyhow::anyhow!("{}: command not found", name))?;
 
     let plugin = load_plugin(&metadata_mut.path);
     metadata_mut.plugin = plugin.clone();
@@ -43,7 +43,7 @@ pub fn reload_plugin(name: &str) -> anyhow::Result<Arc<CommandRef>> {
 
     let metadata_mut = registry_writer
         .borrow_mut(name)
-        .ok_or_else(|| anyhow::anyhow!("{}: plugin not found", name))?;
+        .ok_or_else(|| anyhow::anyhow!("{}: command not found", name))?;
 
     metadata_mut.plugin = None;
 

@@ -2,7 +2,6 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::parse_macro_input;
 
-
 #[proc_macro_attribute]
 pub fn load(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let function = parse_macro_input!(item as syn::ItemFn);
@@ -16,8 +15,9 @@ pub fn load(_attr: TokenStream, item: TokenStream) -> TokenStream {
             ::rush_plugin::rush_interface::Command {
                 load: rush_internal_load,
                 info: rush_internal_info,
+                desc: rush_internal_desc,
+                help: rush_internal_help,
                 version: rush_internal_version,
-                usage: rush_internal_usage,
                 exec: rush_internal_exec,
             }
             .leak_into_prefix()
@@ -50,6 +50,38 @@ pub fn info(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
+pub fn desc(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let function = parse_macro_input!(item as syn::ItemFn);
+    let fn_name = &function.sig.ident;
+
+    quote! {
+        #[::abi_stable::sabi_extern_fn]
+        fn rush_internal_desc() -> ::abi_stable::std_types::RString {
+            #function
+
+            #fn_name()
+        }
+    }
+    .into()
+}
+
+#[proc_macro_attribute]
+pub fn help(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let function = parse_macro_input!(item as syn::ItemFn);
+    let fn_name = &function.sig.ident;
+
+    quote! {
+        #[::abi_stable::sabi_extern_fn]
+        fn rush_internal_help() -> ::abi_stable::std_types::RString {
+            #function
+
+            #fn_name()
+        }
+    }
+    .into()
+}
+
+#[proc_macro_attribute]
 pub fn version(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let function = parse_macro_input!(item as syn::ItemFn);
     let fn_name = &function.sig.ident;
@@ -66,23 +98,6 @@ pub fn version(_attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn usage(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let function = parse_macro_input!(item as syn::ItemFn);
-    let fn_name = &function.sig.ident;
-
-    quote! {
-        #[::abi_stable::sabi_extern_fn]
-        fn rush_internal_usage() -> ::abi_stable::std_types::RString {
-            #function
-
-            #fn_name()
-        }
-    }
-    .into()
-}
-
-
-#[proc_macro_attribute]
 pub fn exec(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let function = parse_macro_input!(item as syn::ItemFn);
     let fn_name = &function.sig.ident;
@@ -92,7 +107,7 @@ pub fn exec(_attr: TokenStream, item: TokenStream) -> TokenStream {
         fn rush_internal_exec(args: ::abi_stable::std_types::RVec<::abi_stable::std_types::RString>)
             -> ::rush_plugin::rush_interface::ExecResult {
             #function
-            
+
             #fn_name(args)
         }
     }

@@ -13,8 +13,9 @@ use abi_stable::{
 pub struct Command {
     pub load: extern "C" fn(),
     pub info: extern "C" fn() -> CommandInfo,
+    pub help: extern "C" fn() -> RString,
+    pub desc: extern "C" fn() -> RString,
     pub version: extern "C" fn() -> RString,
-    pub usage: extern "C" fn() -> RString,
     pub exec: extern "C" fn(RVec<RString>) -> ExecResult,
 }
 
@@ -24,7 +25,7 @@ pub struct CommandInfo {
     pub name: RString,
     pub description: RString,
     pub version: RString,
-    pub usage: RString,
+    pub help: RString,
 }
 
 #[repr(C)]

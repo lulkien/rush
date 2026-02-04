@@ -5,7 +5,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use rush_interface::CommandRef;
 
-pub use lazy::{get_plugin, reload_plugin};
+pub use lazy::{get_plugin};
 
 #[allow(unused)]
 struct PluginMetadata {

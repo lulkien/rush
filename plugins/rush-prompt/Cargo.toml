@@ -1,5 +1,6 @@
 [package]
 name = "rush-prompt"
+description = "Contruct a prompt and return as an ExecResult"
 version = "0.1.0"
 edition = "2024"
 

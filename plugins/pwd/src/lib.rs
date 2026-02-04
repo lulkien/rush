@@ -13,7 +13,7 @@ fn get_plugin_info() -> &'static CommandInfo {
         name: env!("CARGO_PKG_NAME").into(),
         description: env!("CARGO_PKG_DESCRIPTION").into(),
         version: env!("CARGO_PKG_VERSION").into(),
-        usage: "pwd".into(),
+        help: "pwd".into(),
     })
 }
 
@@ -22,9 +22,14 @@ pub fn info() -> CommandInfo {
     get_plugin_info().clone()
 }
 
-#[usage]
-pub fn usage() -> RString {
-    get_plugin_info().usage.clone()
+#[help]
+pub fn help() -> RString {
+    get_plugin_info().help.clone()
+}
+
+#[desc]
+pub fn desc() -> RString {
+    get_plugin_info().description.clone()
 }
 
 #[version]

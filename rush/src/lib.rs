@@ -9,6 +9,7 @@ use log::{error, info};
 use rustyline::error::ReadlineError;
 
 mod env;
+mod shell_builtins;
 mod executor;
 mod init;
 mod input;
@@ -24,6 +25,8 @@ pub fn start_shell() -> anyhow::Result<()> {
     env::init_module()?;
     env::add_rush_data_dirs(init::get_user_data_dir()?, true)?;
     env::add_rush_config_dirs(init::get_user_config_dir()?, true)?;
+
+    shell_builtins::init_module()?;
 
     // Init plugin module
     plugin::init_module()?;

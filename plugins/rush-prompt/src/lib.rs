@@ -16,7 +16,7 @@ fn get_plugin_info() -> &'static CommandInfo {
         name: env!("CARGO_PKG_NAME").into(),
         description: env!("CARGO_PKG_DESCRIPTION").into(),
         version: env!("CARGO_PKG_VERSION").into(),
-        usage: "rush_prompt".into(),
+        help: "This plugin shouldn't be called in a normal way".into(),
     })
 }
 
@@ -118,9 +118,14 @@ pub fn info() -> CommandInfo {
     get_plugin_info().clone()
 }
 
-#[usage]
-pub fn usage() -> RString {
-    get_plugin_info().usage.clone()
+#[desc]
+pub fn desc() -> RString {
+    get_plugin_info().version.clone()
+}
+
+#[help]
+pub fn help() -> RString {
+    get_plugin_info().help.clone()
 }
 
 #[version]
