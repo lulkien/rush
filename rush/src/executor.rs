@@ -38,7 +38,7 @@ pub fn execute_user_input(input: &str) {
 
 pub fn execute_command(cmd: &str, argv: RVec<RString>) -> ExecResult {
     match get_plugin(cmd) {
-        Ok(plugin) => plugin.exec()(argv),
+        Ok(plugin) => plugin.execute()(argv),
         Err(e) => ExecResult::new(101, &format!("{e}")),
     }
 }

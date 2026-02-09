@@ -7,18 +7,8 @@ use std::{
     sync::OnceLock,
 };
 
-static COMMAND_INFO: OnceLock<CommandInfo> = OnceLock::new();
 static HOSTNAME: OnceLock<Option<String>> = OnceLock::new();
 static USERNAME: OnceLock<Option<String>> = OnceLock::new();
-
-fn get_plugin_info() -> &'static CommandInfo {
-    COMMAND_INFO.get_or_init(|| CommandInfo {
-        name: env!("CARGO_PKG_NAME").into(),
-        description: env!("CARGO_PKG_DESCRIPTION").into(),
-        version: env!("CARGO_PKG_VERSION").into(),
-        help: "This plugin shouldn't be called in a normal way".into(),
-    })
-}
 
 fn get_hostname() -> &'static Option<String> {
     HOSTNAME.get_or_init(|| gethostname::gethostname().into_string().ok())
@@ -113,28 +103,28 @@ impl PromptBuilder {
     }
 }
 
-#[info]
-pub fn info() -> CommandInfo {
-    get_plugin_info().clone()
+#[plugin_name]
+pub fn plugin_name() -> RString {
+    env!("CARGO_PKG_NAME").into()
 }
 
-#[desc]
-pub fn desc() -> RString {
-    get_plugin_info().description.clone()
+#[print_desc]
+pub fn print_desc() {
+    eprintln!("{}", env!("CARGO_PKG_DESCRIPTION"));
 }
 
-#[help]
-pub fn help() -> RString {
-    get_plugin_info().help.clone()
+#[print_help]
+pub fn print_help() {
+    eprintln!("T.B.D");
 }
 
-#[version]
-pub fn version() -> RString {
-    get_plugin_info().version.clone()
+#[print_version]
+pub fn print_version() {
+    eprintln!("{}", env!("CARGO_PKG_VERSION"));
 }
 
-#[exec]
-pub fn exec(_args: RVec<RString>) -> ExecResult {
+#[execute]
+pub fn execute(_args: RVec<RString>) -> ExecResult {
     let username = get_username().clone();
     let hostname = get_hostname().clone();
     let home_path = dirs::home_dir();
@@ -198,7 +188,6 @@ pub fn exec(_args: RVec<RString>) -> ExecResult {
 
 #[load]
 pub fn load() {
-    get_plugin_info();
     get_hostname();
     get_username();
 }

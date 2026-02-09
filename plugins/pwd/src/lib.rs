@@ -1,54 +1,37 @@
 use abi_stable::std_types::{RString, RVec};
 use rush_plugin::*;
-use std::{
-    env,
-    io::{Write, stdout},
-    sync::OnceLock,
-};
+use std::env;
 
-static COMMAND_INFO: OnceLock<CommandInfo> = OnceLock::new();
-
-fn get_plugin_info() -> &'static CommandInfo {
-    COMMAND_INFO.get_or_init(|| CommandInfo {
-        name: env!("CARGO_PKG_NAME").into(),
-        description: env!("CARGO_PKG_DESCRIPTION").into(),
-        version: env!("CARGO_PKG_VERSION").into(),
-        help: "pwd".into(),
-    })
+#[plugin_name]
+pub fn plugin_name() -> RString {
+    env!("CARGO_PKG_NAME").into()
 }
 
-#[info]
-pub fn info() -> CommandInfo {
-    get_plugin_info().clone()
+#[print_desc]
+pub fn print_desc() {
+    eprintln!("{}", env!("CARGO_PKG_DESCRIPTION"));
 }
 
-#[help]
-pub fn help() -> RString {
-    get_plugin_info().help.clone()
+#[print_help]
+pub fn print_help() {
+    eprintln!("pwd");
 }
 
-#[desc]
-pub fn desc() -> RString {
-    get_plugin_info().description.clone()
+#[print_version]
+pub fn print_version() {
+    eprintln!("{}", env!("CARGO_PKG_VERSION"));
 }
 
-#[version]
-pub fn version() -> RString {
-    get_plugin_info().version.clone()
-}
-
-#[exec]
-pub fn exec(_args: RVec<RString>) -> ExecResult {
+#[execute]
+pub fn execute(_args: RVec<RString>) -> ExecResult {
     match env::current_dir() {
-        Ok(path) => match writeln!(stdout(), "{}", path.to_string_lossy()) {
-            Ok(_) => ExecResult::default(),
-            Err(e) => ExecResult::new(1, &format!("{}", e)),
-        },
+        Ok(path) => {
+            println!("{}", path.to_string_lossy());
+            ExecResult::default()
+        }
         Err(e) => ExecResult::new(1, &e.to_string()),
     }
 }
 
 #[load]
-pub fn load() {
-    get_plugin_info();
-}
+pub fn load() {}

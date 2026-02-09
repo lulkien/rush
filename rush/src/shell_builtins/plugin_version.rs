@@ -1,66 +1,90 @@
-use std::io::{Write, stderr, stdout};
-
 use abi_stable::std_types::{RString, RVec};
 use rush_interface::ExecResult;
 
 use crate::plugin;
 
-use super::BuiltinCommand;
+use super::{
+    BuiltinCommand,
+    shared::{INVALID_ARGS, NOT_A_PLUGIN, PLUGIN_NOT_FOUND},
+};
 
 static BUILTIN_NAME: &str = "plugin-help";
-static HELP_STRING: &str = "plugin-version plugin_name";
-static DESC_STRING: &str = "plugin-version is a shell built-in";
+static DESC_STRING: &str = "Print a plugin's version.\nplugin-version is a shell built-in";
 
 pub(super) struct Command;
 
 impl BuiltinCommand for Command {
-    fn help(&self) -> &str {
-        HELP_STRING
+    fn print_help(&self) {
+        let usage = format!("Usage: {} [-h | -v | <plugin-name>]", BUILTIN_NAME);
+        let options = [
+            ("-h, --help", "Prints this help message"),
+            ("-v, --version", "Prints the version"),
+        ];
+
+        let examples = [
+            format!("{} -h", BUILTIN_NAME),
+            format!("{} -v", BUILTIN_NAME),
+            format!("{} echo", BUILTIN_NAME),
+        ];
+
+        let options_text = options
+            .iter()
+            .map(|(opt, desc)| format!("  {}: {}", opt, desc))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let examples_text = examples.join("\n");
+
+        eprintln!(
+            "{desc}\n\n{usage}\n\nOptions:\n{options}\n\nExamples:\n{examples}",
+            desc = DESC_STRING,
+            usage = usage,
+            options = options_text,
+            examples = examples_text,
+        )
     }
 
-    fn desc(&self) -> &str {
-        DESC_STRING
+    fn print_version(&self) {
+        eprintln!("{}", env!("CARGO_PKG_VERSION"));
     }
 
-    fn version(&self) -> &str {
-        env!("CARGO_PKG_VERSION")
-    }
-
-    fn exec(&self, mut args: RVec<RString>) -> rush_interface::ExecResult {
-        if args.is_empty() || args.len() > 1 {
+    fn execute(&self, args: RVec<RString>) -> rush_interface::ExecResult {
+        let [param] = args.as_slice() else {
             return ExecResult::new(
-                1,
-                &format!(
-                    "{}: expected 1 argument, found {}",
-                    BUILTIN_NAME,
-                    args.len()
-                ),
+                INVALID_ARGS,
+                &format!("{BUILTIN_NAME}: expected 1 argument, found {}", args.len()),
             );
+        };
+
+        match param.as_str() {
+            "-h" | "--help" => self.print_help(),
+            "-v" | "--version" => self.print_version(),
+            _ => return self.handle_plugin_lookup(param),
         }
 
-        let plugin = args.remove(0);
+        ExecResult::ok()
+    }
+}
 
-        if let Ok(builtins_reg) = super::builtins_registry()
-            && builtins_reg.contains(&plugin)
-        {
-            let output = builtins_reg
-                .get_command(&plugin)
-                .expect("Cannot get built-in command")
-                .version()
-                .to_owned();
+impl Command {
+    fn handle_plugin_lookup(&self, param: &RString) -> ExecResult {
+        plugin::get_plugin(param).map_or_else(
+            |e| {
+                let is_builtin = super::builtins_registry().is_ok_and(|reg| reg.contains(param));
 
-            writeln!(stderr(), "{}", output).expect("Failed to write to stderr");
-
-            ExecResult::default()
-        } else {
-            match plugin::get_plugin(&plugin) {
-                Ok(plugin) => {
-                    let output = plugin.version()().into_string();
-                    writeln!(stdout(), "{output}").expect("Failed to write to stdout");
-                    ExecResult::default()
+                if is_builtin {
+                    ExecResult::new(
+                        NOT_A_PLUGIN,
+                        &format!("{BUILTIN_NAME}: {param} is a shell builtin"),
+                    )
+                } else {
+                    ExecResult::new(PLUGIN_NOT_FOUND, &format!("{BUILTIN_NAME}: {e}"))
                 }
-                Err(e) => ExecResult::new(101, &format!("{}: {e}", BUILTIN_NAME)),
-            }
-        }
+            },
+            |plugin| {
+                plugin.print_version()();
+                ExecResult::ok()
+            },
+        )
     }
 }

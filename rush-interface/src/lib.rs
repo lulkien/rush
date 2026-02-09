@@ -12,20 +12,11 @@ use abi_stable::{
 #[sabi(missing_field(panic))]
 pub struct Command {
     pub load: extern "C" fn(),
-    pub info: extern "C" fn() -> CommandInfo,
-    pub help: extern "C" fn() -> RString,
-    pub desc: extern "C" fn() -> RString,
-    pub version: extern "C" fn() -> RString,
-    pub exec: extern "C" fn(RVec<RString>) -> ExecResult,
-}
-
-#[repr(C)]
-#[derive(StableAbi, Debug, Clone)]
-pub struct CommandInfo {
-    pub name: RString,
-    pub description: RString,
-    pub version: RString,
-    pub help: RString,
+    pub plugin_name: extern "C" fn() -> RString,
+    pub print_help: extern "C" fn(),
+    pub print_desc: extern "C" fn(),
+    pub print_version: extern "C" fn(),
+    pub execute: extern "C" fn(RVec<RString>) -> ExecResult,
 }
 
 #[repr(C)]
@@ -41,6 +32,10 @@ impl ExecResult {
             code,
             message: message.into(),
         }
+    }
+
+    pub fn ok() -> Self {
+        ExecResult::default()
     }
 }
 

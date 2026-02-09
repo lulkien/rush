@@ -123,7 +123,7 @@ fn load_plugin<P: AsRef<Path>>(plugin_path: P) -> Option<Arc<CommandRef>> {
 
     module.load()();
 
-    debug!("Loaded plugin: {}", module.info()().name.clone());
+    debug!("Loaded plugin: {}", module.plugin_name()().clone());
 
     Some(Arc::new(module))
 }

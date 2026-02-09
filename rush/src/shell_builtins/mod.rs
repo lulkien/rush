@@ -11,15 +11,15 @@ mod exit;
 mod plugin_desc;
 mod plugin_help;
 mod plugin_version;
+mod shared;
 
 static BUILTINS_REGISTRY: OnceLock<RwLock<BuiltinsRegistry>> = OnceLock::new();
 
 #[allow(unused)]
 pub trait BuiltinCommand: Send + Sync {
-    fn help(&self) -> &str;
-    fn desc(&self) -> &str;
-    fn version(&self) -> &str;
-    fn exec(&self, args: RVec<RString>) -> ExecResult;
+    fn print_help(&self);
+    fn print_version(&self);
+    fn execute(&self, args: RVec<RString>) -> ExecResult;
 }
 
 #[derive(Default)]
@@ -40,17 +40,13 @@ impl BuiltinsRegistry {
         Ok(())
     }
 
-    fn get_command(&self, name: &str) -> Option<Arc<Box<dyn BuiltinCommand>>> {
-        self.commands.get(name).cloned()
-    }
-
     pub fn contains(&self, name: &str) -> bool {
         self.commands.contains_key(name)
     }
 
     pub fn execute(&self, builtin_name: &str, args: RVec<RString>) -> ExecResult {
         if let Some(command) = self.commands.get(builtin_name) {
-            command.exec(args)
+            command.execute(args)
         } else {
             ExecResult::new(1, &format!("{}: built-in command not found", builtin_name))
         }
