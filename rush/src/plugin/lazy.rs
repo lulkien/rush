@@ -1,6 +1,9 @@
-#![allow(unused)]
-
-use std::{fs, path::Path, sync::Arc};
+use std::{
+    fs::{self, File},
+    io::Read,
+    path::Path,
+    sync::Arc,
+};
 
 use anyhow::{Context, ensure};
 use log::{debug, info};
@@ -38,20 +41,20 @@ pub fn get_plugin(name: &str) -> anyhow::Result<Arc<CommandRef>> {
     plugin.ok_or_else(|| anyhow::anyhow!("{}: plugin failed to load", name))
 }
 
-pub fn reload_plugin(name: &str) -> anyhow::Result<Arc<CommandRef>> {
-    let mut registry_writer = write_plugin_registry()?;
-
-    let metadata_mut = registry_writer
-        .borrow_mut(name)
-        .ok_or_else(|| anyhow::anyhow!("{}: command not found", name))?;
-
-    metadata_mut.plugin = None;
-
-    let plugin = load_plugin(&metadata_mut.path);
-    metadata_mut.plugin = plugin.clone();
-
-    plugin.ok_or_else(|| anyhow::anyhow!("{}: plugin failed to load", name))
-}
+// pub fn reload_plugin(name: &str) -> anyhow::Result<Arc<CommandRef>> {
+//     let mut registry_writer = write_plugin_registry()?;
+//
+//     let metadata_mut = registry_writer
+//         .borrow_mut(name)
+//         .ok_or_else(|| anyhow::anyhow!("{}: command not found", name))?;
+//
+//     metadata_mut.plugin = None;
+//
+//     let plugin = load_plugin(&metadata_mut.path);
+//     metadata_mut.plugin = plugin.clone();
+//
+//     plugin.ok_or_else(|| anyhow::anyhow!("{}: plugin failed to load", name))
+// }
 
 pub(super) fn discover_plugins() -> anyhow::Result<()> {
     let mut registered_count = 0;
@@ -67,50 +70,51 @@ pub(super) fn discover_plugins() -> anyhow::Result<()> {
 }
 
 fn discover_plugins_from_dir<P: AsRef<Path>>(path: P) -> anyhow::Result<usize> {
-    let path = path.as_ref();
+    let dir_path = path.as_ref();
     let mut registered_count = 0;
 
-    ensure!(path.exists(), format!("{} not found", path.display()));
     ensure!(
-        path.is_dir(),
-        format!("{} is not a directory", path.display())
+        dir_path.exists(),
+        format!("{} not found", dir_path.display())
+    );
+    ensure!(
+        dir_path.is_dir(),
+        format!("{} is not a directory", dir_path.display())
     );
 
-    debug!("Load plugin from: {}", path.display());
+    debug!("Load plugin from: {}", dir_path.display());
 
-    let entries = fs::read_dir(path)
-        .with_context(|| format!("Failed to read directory: {}", path.display()))?;
+    let entries = fs::read_dir(dir_path)
+        .with_context(|| format!("Failed to read directory: {}", dir_path.display()))?;
 
     for entry in entries {
-        let entry = entry.with_context(|| format!("Failed to read entry in {}", path.display()))?;
-        let path = entry.path();
+        let entry =
+            entry.with_context(|| format!("Failed to read entry in {}", dir_path.display()))?;
+        let entry_path = entry.path();
 
-        if let Some(plugin_name) = is_plugin_file(&path) {
-            debug!("Registered plugin path: {}", path.display());
-            registered_count += 1;
-            write_plugin_registry()?.add(&plugin_name, PluginMetadata::new(&plugin_name, path));
+        if is_metadata_file(&entry_path) {
+            let mut file = File::open(entry_path)?;
+            let mut buf = Vec::new();
+            file.read_to_end(&mut buf)?;
+
+            if let Ok(metadata) = PluginMetadata::from_raw_metadata(dir_path, &buf) {
+                debug!("Registered plugin path: {}", metadata.name);
+                registered_count += 1;
+                write_plugin_registry()?.add(&metadata.name.clone(), metadata);
+            }
         }
     }
 
     Ok(registered_count)
 }
 
-fn is_plugin_file<P: AsRef<Path>>(path: P) -> Option<String> {
-    let path = path.as_ref();
-    if !path.is_file() {
-        return None;
+fn is_metadata_file<P: AsRef<Path>>(path: P) -> bool {
+    if let Some(extension) = path.as_ref().extension()
+        && extension == "metadata"
+    {
+        return true;
     }
-
-    let filename = path.file_name()?.to_str()?;
-
-    if filename.starts_with("lib") && filename.ends_with(".so") {
-        let name = &filename[3..filename.len() - 3];
-        if !name.is_empty() {
-            return Some(name.to_string());
-        }
-    }
-
-    None
+    false
 }
 
 fn load_plugin<P: AsRef<Path>>(plugin_path: P) -> Option<Arc<CommandRef>> {

@@ -45,7 +45,7 @@ pub fn start_shell() -> anyhow::Result<()> {
     let history_file = init::get_user_cache_dir()?.join(".history");
     input::save_history(&history_file)?;
 
-    writeln!(stderr(), "quit").map_err(|_| anyhow::anyhow!("Failed to write to stderr"))?;
+    eprintln!("quit");
 
     Ok(())
 }
@@ -58,7 +58,7 @@ fn enter_repl() -> anyhow::Result<()> {
 
     // Enter main loop
     loop {
-        let prompt = executor::execute_command("rush_prompt", RVec::new()).message;
+        let prompt = executor::execute_command("rush-prompt", RVec::new()).message;
 
         match input::readline(&prompt) {
             Ok(line) => {
@@ -66,8 +66,7 @@ fn enter_repl() -> anyhow::Result<()> {
                 executor::execute_user_input(&line);
             }
             Err(ReadlineError::Interrupted) => {
-                writeln!(stderr(), "^C")
-                    .map_err(|_| anyhow::anyhow!("Failed to write to stderr"))?;
+                eprintln!("^C");
             }
             Err(ReadlineError::Eof) => {
                 break;

@@ -3,6 +3,7 @@ name = "pwd"
 description = "Print working directory"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [lib]
 crate-type = ["cdylib"]

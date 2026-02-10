@@ -4,6 +4,7 @@ description = """Contruct a prompt and return as an ExecResult
 This won't print anything to stdout"""
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [lib]
 crate-type = ["cdylib"]
