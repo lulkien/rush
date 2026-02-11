@@ -8,9 +8,7 @@ use anyhow::bail;
 use rush_interface::ExecResult;
 
 mod exit;
-mod plugin_desc;
-mod plugin_help;
-mod plugin_version;
+mod plugin;
 mod shared;
 
 static BUILTINS_REGISTRY: OnceLock<RwLock<BuiltinsRegistry>> = OnceLock::new();
@@ -67,12 +65,7 @@ pub fn init_module() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("BUILTINS_REGISTRY write lock poisoned: {e}"))?;
 
     builtins.insert_command("exit", Arc::new(Box::new(exit::Command {})))?;
-    builtins.insert_command("plugin-desc", Arc::new(Box::new(plugin_desc::Command {})))?;
-    builtins.insert_command("plugin-help", Arc::new(Box::new(plugin_help::Command {})))?;
-    builtins.insert_command(
-        "plugin-version",
-        Arc::new(Box::new(plugin_version::Command {})),
-    )?;
+    builtins.insert_command("plugin", Arc::new(Box::new(plugin::Command {})))?;
 
     Ok(())
 }

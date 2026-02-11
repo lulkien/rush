@@ -1,19 +1,15 @@
-use std::{
-    fs::File,
-    io::{Write, stderr},
-    time::Instant,
-};
+use std::{fs::File, time::Instant};
 
 use abi_stable::std_types::RVec;
 use log::{error, info};
 use rustyline::error::ReadlineError;
 
 mod env;
-mod shell_builtins;
 mod executor;
 mod init;
 mod input;
 mod plugin;
+mod shell_builtins;
 
 pub fn start_shell() -> anyhow::Result<()> {
     let start = Instant::now();
@@ -38,7 +34,16 @@ pub fn start_shell() -> anyhow::Result<()> {
     input::init_module()?;
 
     let elapsed = start.elapsed();
-    info!("Shell initialization took: {} µs", elapsed.as_micros());
+
+    let elapsed_string = if elapsed.as_micros() < 1000 {
+        format!("{} µs", elapsed.as_micros())
+    } else if elapsed.as_millis() < 1000 {
+        format!("{} ms", elapsed.as_millis())
+    } else {
+        format!("{} s", elapsed.as_secs_f64())
+    };
+
+    info!("Shell initialization took: {}", elapsed_string);
 
     enter_repl()?;
 
