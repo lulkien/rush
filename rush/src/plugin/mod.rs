@@ -40,7 +40,7 @@ impl DashRegistry<RegistryTypeRaw> for PluginRegistry {
 }
 
 impl PluginRegistry {
-    pub fn execute(&self, command: Command, last_result: ExecResult) -> ExecResult {
+    pub fn execute(&self, command: Command) -> ExecResult {
         let plugin_metadata = match self.get(&command.name) {
             Ok(metadata) => metadata,
             Err(e) => return ExecResult::new(1, format!("{e}").as_str()),
@@ -71,7 +71,7 @@ impl PluginRegistry {
             .plugin
             .as_ref()
             .expect("Plugin must be valid at this point")
-            .execute()(command.args, last_result)
+            .execute()(command.args)
     }
 }
 

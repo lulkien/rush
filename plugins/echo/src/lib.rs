@@ -1,6 +1,64 @@
 use abi_stable::std_types::{RString, RVec};
 use rush_plugin::*;
 
+/// Options for the echo command.
+#[derive(Debug, Clone, Copy, Default)]
+struct Options {
+    /// Whether the output should have a trailing newline.
+    /// True by default. `-n` disables it.
+    pub trailing_newline: bool,
+}
+
+/// Check if an argument is the `-n` flag.
+fn is_flag(arg: &str) -> bool {
+    arg == "-n"
+}
+
+/// Process command line arguments, separating flags from normal arguments.
+fn filter_flags(args: Vec<String>) -> (Vec<String>, Options) {
+    let mut options = Options::default();
+    let mut args_iter = args.iter().peekable();
+
+    while let Some(arg) = args_iter.peek() {
+        if is_flag(arg) {
+            args_iter.next();
+            options.trailing_newline = false;
+        } else {
+            break;
+        }
+    }
+
+    (args_iter.cloned().collect(), options)
+}
+
+/// Parse escape sequences in a string (\n, \t, \\).
+fn parse_escapes(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                match next {
+                    'n' => result.push('\n'),
+                    't' => result.push('\t'),
+                    '\\' => result.push('\\'),
+                    _ => {
+                        result.push('\\');
+                        result.push(next);
+                    }
+                }
+            } else {
+                result.push('\\');
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
+}
+
 #[plugin_name]
 pub fn plugin_name() -> RString {
     env!("CARGO_PKG_NAME").into()
@@ -33,75 +91,8 @@ Escape sequences:
     .into()
 }
 
-/// Options for the echo command.
-#[derive(Debug, Clone, Copy, Default)]
-struct Options {
-    /// Whether the output should have a trailing newline.
-    /// True by default. `-n` disables it.
-    pub trailing_newline: bool,
-}
-
-/// Check if an argument is the `-n` flag.
-fn is_flag(arg: &str) -> bool {
-    arg == "-n"
-}
-
-/// Process command line arguments, separating flags from normal arguments.
-///
-/// # Returns
-///
-/// - Vector of non-flag arguments.
-/// - [`Options`], describing how the arguments should be interpreted.
-fn filter_flags(args: Vec<String>) -> (Vec<String>, Options) {
-    let mut options = Options::default();
-    let mut args_iter = args.iter().peekable();
-
-    // Process `-n` flags until first non-flag is found.
-    while let Some(arg) = args_iter.peek() {
-        if is_flag(arg) {
-            args_iter.next();
-            options.trailing_newline = false;
-        } else {
-            break;
-        }
-    }
-
-    // Return remaining non-flag arguments.
-    (args_iter.cloned().collect(), options)
-}
-
-/// Parse escape sequences in a string (simplified: only \n, \t, \\)
-fn parse_escapes(s: &str) -> String {
-    let mut result = String::new();
-    let mut chars = s.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            if let Some(next) = chars.next() {
-                match next {
-                    'n' => result.push('\n'),
-                    't' => result.push('\t'),
-                    '\\' => result.push('\\'),
-                    _ => {
-                        // For any other escape sequence, output the backslash and the character
-                        result.push('\\');
-                        result.push(next);
-                    }
-                }
-            } else {
-                // Trailing backslash
-                result.push('\\');
-            }
-        } else {
-            result.push(c);
-        }
-    }
-
-    result
-}
-
 #[execute]
-pub fn execute(args: RVec<RString>, _last_result: ExecResult) -> ExecResult {
+pub fn execute(args: RVec<RString>) -> ExecResult {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
 
     // Check for help/version flags first
@@ -131,7 +122,6 @@ pub fn execute(args: RVec<RString>, _last_result: ExecResult) -> ExecResult {
         }
         first = false;
 
-        // Always interpret escape sequences
         output.push_str(&parse_escapes(&arg));
     }
 

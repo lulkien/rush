@@ -60,9 +60,10 @@ rush/                  ← Cargo workspace root
 - `Executor` holds `BuiltinsRegistry`, `PluginRegistry`, and a `DashMap<String, ExecutionFrom>` cache.
 - `ExecutionFrom` enum: `Builtin` | `Plugin` | `NotFound`.
 - Cache is populated on first lookup; subsequent lookups skip registry scanning.
-- `execute_command_pipe_list`: iterates pipes sequentially (semicolons), `last_result` flows between them.
-- `execute_pipe`: iterates commands sequentially (pipes), `last_result` flows between them. **No actual piping yet** — commands run sequentially, not with connected fds.
-- Output: exit code 0 → stdout, non-zero → stderr.
+- `execute_command_pipe_list`: iterates semicolon-separated pipe groups; each group runs independently.
+- `execute_pipe`: **single command** → runs in-process via the plugin/builtin registry. **Multiple commands** (`cmd1 | cmd2 | ...`) → forks N child processes connected by N-1 Unix pipes via `fork()` + `pipe()` + `dup2()`. Each child runs one command, stdin/stdout wired to the adjacent pipes. Parent waits for all children; returns the last child's exit code.
+- Output: `println!` from child processes flows through pipes naturally; `print_result()` writes to stdout (code 0) or stderr (code ≠ 0).
+- Uses `nix` for safe `fork()`/`pipe()`/`waitpid()` and `libc::dup2` for raw fd wiring. Single `unsafe` block around `fork()` — Rush is single-threaded, each child calls `std::process::exit()`.
 
 ### Builtins (`rush/src/shell_builtins/`)
 
@@ -116,6 +117,8 @@ rush/                  ← Cargo workspace root
 | `rustyline` 18 | Readline support (history, line editing) |
 | `shlex` 1.3 | POSIX shell lexing |
 | `dashmap` 6.1 | Concurrent hash maps for registries and caches |
+| `nix` 0.31 | Safe `fork()`/`pipe()`/`waitpid()` for pipeline execution |
+| `libc` 0.2 | Raw fd operations (`dup2`) for pipe wiring |
 | `colored` (plugins) | Terminal color output |
 | `gethostname` (rush-prompt) | Hostname for prompt |
 | `dirs` (rush-prompt) | Home directory for ~ substitution |
@@ -168,16 +171,12 @@ cargo build --release -p pwd -p echo -p cat -p rush-prompt
 
 ## Current Limitations (do not attempt, not yet implemented)
 
-- No actual pipe I/O (commands in a pipeline run sequentially, no fd redirection).
 - No subshell support.
 - No job control / background processes.
 - No variable expansion (`$VAR`).
 - No tab completion.
 - No signal handling (Ctrl+C terminates the shell, Ctrl+Z is unhandled).
 - No history search (Ctrl+R).
-- `cat` plugin is a stub that passes through `last_result`.
-- Plugins can't read stdin.
-- Exit status does not propagate meaningfully across pipes.
 
 ## Testing
 

@@ -1,10 +1,16 @@
+use std::os::fd::{AsRawFd, OwnedFd};
+
 use dashmap::DashMap;
+use nix::{
+    sys::wait::{waitpid, WaitStatus},
+    unistd::{ForkResult, Pid, fork, pipe},
+};
 use rush_interface::ExecResult;
 
 use crate::{
     plugin::PluginRegistry,
     shell_builtins::BuiltinsRegistry,
-    types::{Command, CommandPipe, CommandPipeList, DashRegistry},
+    types::{Command, CommandPipeList, DashRegistry},
 };
 
 enum ExecutionFrom {
@@ -28,74 +34,160 @@ impl Executor {
         }
     }
 
+    /// Execute a list of semicolon-separated pipe groups.
+    /// Single-command groups run in-process.
+    /// Multi-command groups fork N children connected by N-1 Unix pipes.
     pub fn execute_command_pipe_list(&self, pipes: CommandPipeList) -> ExecResult {
         let mut last_result = ExecResult::default();
 
-        pipes.into_iter().for_each(|pipe| {
-            last_result = self.execute_pipe(pipe);
-        });
-
-        last_result
-    }
-
-    fn execute_pipe(&self, pipe: CommandPipe) -> ExecResult {
-        let mut last_result = ExecResult::default();
-
-        pipe.into_iter().for_each(|command| {
-            last_result = self.execute_command_with_result(command, last_result.clone());
-        });
-
-        if last_result.code == 0 {
-            println!("{}", last_result.message);
-        } else {
-            eprintln!("{}", last_result.message);
+        for pipe in pipes {
+            let commands: Vec<Command> = pipe.into_iter().collect();
+            last_result = match commands.len() {
+                0 => ExecResult::default(),
+                1 => {
+                    let result = self.execute_single(commands.into_iter().next().unwrap());
+                    print_result(&result);
+                    result
+                }
+                _ => self.execute_pipe_forked(commands),
+            };
         }
 
         last_result
     }
 
+    /// Run a single command in-process (no fork).
+    /// Used by the REPL for the prompt plugin.
     pub fn execute_command(&self, command: Command) -> ExecResult {
-        self.execute_command_with_result(command, ExecResult::default())
+        self.execute_single(command)
     }
 
-    fn execute_command_with_result(&self, command: Command, last_result: ExecResult) -> ExecResult {
+    /// Look up and execute a single command via the registry.
+    fn execute_single(&self, command: Command) -> ExecResult {
         if let Some(cache_entry) = self.entry_point_cache.get(command.name.as_str()) {
-            match cache_entry.value() {
-                ExecutionFrom::Builtin => {
-                    return self.builtin_reg.execute(command, last_result);
-                }
-                ExecutionFrom::Plugin => {
-                    return self.plugin_reg.execute(command, last_result);
-                }
-                ExecutionFrom::NotFound => {
-                    return ExecResult::new(
-                        1,
-                        format!("{}: Command not found", command.name.as_str()).as_str(),
-                    );
-                }
-            }
+            return match cache_entry.value() {
+                ExecutionFrom::Builtin => self.builtin_reg.execute(command),
+                ExecutionFrom::Plugin => self.plugin_reg.execute(command),
+                ExecutionFrom::NotFound => ExecResult::new(
+                    127,
+                    format!("{}: command not found", command.name.as_str()).as_str(),
+                ),
+            };
         }
 
-        self.lookup_and_execute(command, last_result)
+        self.lookup_and_execute(command)
     }
 
-    fn lookup_and_execute(&self, command: Command, last_result: ExecResult) -> ExecResult {
+    fn lookup_and_execute(&self, command: Command) -> ExecResult {
         if self.plugin_reg.contains(&command.name) {
             self.entry_point_cache
                 .insert(command.name.to_string(), ExecutionFrom::Plugin);
-            self.plugin_reg.execute(command, last_result)
+            self.plugin_reg.execute(command)
         } else if self.builtin_reg.contains(&command.name) {
             self.entry_point_cache
                 .insert(command.name.to_string(), ExecutionFrom::Builtin);
-            self.builtin_reg.execute(command, last_result)
+            self.builtin_reg.execute(command)
         } else {
             self.entry_point_cache
                 .insert(command.name.to_string(), ExecutionFrom::NotFound);
             ExecResult::new(
-                1,
-                format!("{}: Command not found", command.name.as_str()).as_str(),
+                127,
+                format!("{}: command not found", command.name.as_str()).as_str(),
             )
         }
+    }
+
+    /// Fork N child processes, connect them with N-1 Unix pipes,
+    /// wait for all children, return the last command's exit code.
+    ///
+    /// Like fish's execution engine, pipe fds are marked FD_CLOEXEC
+    /// to prevent leaks to grandchild processes.
+    ///
+    /// # Safety
+    ///
+    /// `fork()` is unsafe in multi-threaded programs. Rush is
+    /// single-threaded; each child runs one command then exits.
+    fn execute_pipe_forked(&self, commands: Vec<Command>) -> ExecResult {
+        let n = commands.len();
+
+        // Create N-1 pipes, mark each fd CLOEXEC (fish pattern).
+        let mut pipes: Vec<(OwnedFd, OwnedFd)> = Vec::with_capacity(n.saturating_sub(1));
+        for _ in 0..n.saturating_sub(1) {
+            match pipe() {
+                Ok((r, w)) => {
+                    set_cloexec(r.as_raw_fd());
+                    set_cloexec(w.as_raw_fd());
+                    pipes.push((r, w));
+                }
+                Err(e) => {
+                    return ExecResult::new(1, &format!("pipe() failed: {e}"));
+                }
+            }
+        }
+
+        let mut pids: Vec<Pid> = Vec::with_capacity(n);
+
+        for i in 0..n {
+            match unsafe { fork() } {
+                Ok(ForkResult::Child) => {
+                    // ── child ──────────────────────────────────
+                    // Wire stdin from previous pipe, stdout to next pipe.
+                    if i > 0 {
+                        unsafe { libc::dup2(pipes[i - 1].0.as_raw_fd(), libc::STDIN_FILENO); }
+                    }
+                    if i < n - 1 {
+                        unsafe { libc::dup2(pipes[i].1.as_raw_fd(), libc::STDOUT_FILENO); }
+                    }
+                    // Drop OwnedFds — closes every pipe fd the child
+                    // replaced with dup2 or doesn't need.
+                    drop(pipes);
+
+                    let result = self.lookup_and_execute(commands[i].clone());
+                    print_result(&result);
+                    std::process::exit(result.code as i32);
+                }
+                Ok(ForkResult::Parent { child }) => pids.push(child),
+                Err(e) => {
+                    return ExecResult::new(1, &format!("fork() failed: {e}"));
+                }
+            }
+        }
+
+        // ── parent ──────────────────────────────────────────
+        // Close all pipe fds BEFORE waiting. If the parent still
+        // holds the write end, the reading child (e.g. cat) never
+        // sees EOF and blocks forever in read_to_string.
+        drop(pipes);
+
+        let mut last_code = 0i32;
+        for pid in &pids {
+            if let Ok(WaitStatus::Exited(_, code)) = waitpid(*pid, None) {
+                last_code = code;
+            }
+        }
+
+        ExecResult::new(last_code as u8, "")
+    }
+}
+
+/// Mark an fd close-on-exec so it doesn't leak through future exec calls.
+fn set_cloexec(fd: std::os::fd::RawFd) {
+    unsafe {
+        let flags = libc::fcntl(fd, libc::F_GETFD);
+        if flags != -1 {
+            libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
+        }
+    }
+}
+
+/// Print result: exit 0 + non-empty message → stdout; otherwise → stderr.
+fn print_result(result: &ExecResult) {
+    if result.code == 0 {
+        if !result.message.is_empty() {
+            println!("{}", result.message);
+        }
+    } else {
+        eprintln!("{}", result.message);
     }
 }
 
@@ -104,6 +196,5 @@ pub fn init_module(
     plugin_reg: PluginRegistry,
 ) -> anyhow::Result<Executor> {
     let executor = Executor::new(builtin_reg, plugin_reg);
-
     Ok(executor)
 }

@@ -53,7 +53,7 @@ impl BuiltinCommand for Command {
         eprintln!("{}", env!("CARGO_PKG_VERSION"));
     }
 
-    fn execute(&self, args: RVec<RString>, _last_result: ExecResult) -> ExecResult {
+    fn execute(&self, args: RVec<RString>) -> ExecResult {
         match args.as_slice() {
             [] => process::exit(0),
 

@@ -17,7 +17,7 @@ pub trait BuiltinCommand: Send + Sync {
     fn print_desc(&self);
     fn print_help(&self);
     fn print_version(&self);
-    fn execute(&self, args: RVec<RString>, last_result: ExecResult) -> ExecResult;
+    fn execute(&self, args: RVec<RString>) -> ExecResult;
 }
 
 type RegistryTypeRaw = Box<dyn BuiltinCommand>;
@@ -52,12 +52,12 @@ impl DashRegistry<RegistryTypeRaw> for BuiltinsRegistry {
 }
 
 impl BuiltinsRegistry {
-    pub fn execute(&self, command: Command, last_result: ExecResult) -> ExecResult {
+    pub fn execute(&self, command: Command) -> ExecResult {
         match self.get(&command.name) {
             Ok(command_entry) => command_entry
                 .as_ref()
                 .borrow()
-                .execute(command.args, last_result),
+                .execute(command.args),
             Err(e) => ExecResult::new(1, format!("{e}").as_str()),
         }
     }

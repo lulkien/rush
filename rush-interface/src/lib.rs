@@ -16,7 +16,7 @@ pub struct Command {
     pub plugin_help: extern "C" fn() -> RString,
     pub plugin_desc: extern "C" fn() -> RString,
     pub plugin_version: extern "C" fn() -> RString,
-    pub execute: extern "C" fn(RVec<RString>, ExecResult) -> ExecResult,
+    pub execute: extern "C" fn(RVec<RString>) -> ExecResult,
 }
 
 #[repr(C)]

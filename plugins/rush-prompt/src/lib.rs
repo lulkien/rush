@@ -100,7 +100,6 @@ impl PromptBuilder {
             return String::new();
         }
 
-        // Format: "<space><component1><space><component2><space>..."
         let mut result = String::new();
         for component in &self.components {
             if !result.is_empty() {
@@ -109,7 +108,6 @@ impl PromptBuilder {
             result.push_str(component);
         }
 
-        // Add trailing space after all components
         if !result.is_empty() {
             result.push(' ');
         }
@@ -124,7 +122,7 @@ impl PromptBuilder {
 }
 
 #[execute]
-pub fn execute(_args: RVec<RString>, _last_result: ExecResult) -> ExecResult {
+pub fn execute(_args: RVec<RString>) -> ExecResult {
     let username = get_username().clone();
     let hostname = get_hostname().clone();
     let home_path = dirs::home_dir();
@@ -137,7 +135,7 @@ pub fn execute(_args: RVec<RString>, _last_result: ExecResult) -> ExecResult {
     prompt.add_with_format(
         || username.clone(),
         |user| {
-            let user_icon = "";
+            let user_icon = "\u{f007}";
             if is_root {
                 format!("{} {}", user_icon, user).red().to_string()
             } else {
@@ -150,7 +148,7 @@ pub fn execute(_args: RVec<RString>, _last_result: ExecResult) -> ExecResult {
     prompt.add_with_format(
         || hostname.clone(),
         |host| {
-            let host_icon = "󰟀"; // Alternative: "󰒋", "󰅐"
+            let host_icon = "\u{f03c0}";
             format!("{} {}", host_icon, host).yellow().to_string()
         },
     );
@@ -174,7 +172,7 @@ pub fn execute(_args: RVec<RString>, _last_result: ExecResult) -> ExecResult {
     prompt.add_with_format(
         || Some(dir_string.clone()),
         |dir| {
-            let dir_icon = ""; // Alternative: "󰉋", "󰋜"
+            let dir_icon = "\u{f07c}";
             format!("{} {}", dir_icon, dir).blue().to_string()
         },
     );

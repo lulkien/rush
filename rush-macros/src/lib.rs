@@ -104,12 +104,11 @@ pub fn execute(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     quote! {
         #[::abi_stable::sabi_extern_fn]
-        fn rush_internal_execute(args: ::abi_stable::std_types::RVec<::abi_stable::std_types::RString>,
-                                 last_result: ::rush_plugin::rush_interface::ExecResult)
-            -> ::rush_plugin::rush_interface::ExecResult {
+        fn rush_internal_execute(
+            args: ::abi_stable::std_types::RVec<::abi_stable::std_types::RString>) -> ::rush_plugin::rush_interface::ExecResult {
             #function
 
-            #fn_name(args, last_result)
+            #fn_name(args)
         }
     }
     .into()
