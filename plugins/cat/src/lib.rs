@@ -1,6 +1,6 @@
 use abi_stable::std_types::{RString, RVec};
+use rush_interface::ExecResult;
 use rush_plugin::*;
-use std::env;
 
 #[plugin_name]
 pub fn plugin_name() -> RString {
@@ -19,15 +19,12 @@ pub fn plugin_version() -> RString {
 
 #[plugin_help]
 pub fn plugin_help() -> RString {
-    "pwd".into()
+    "T.B.D".into()
 }
 
 #[execute]
-pub fn execute(_args: RVec<RString>, _last_result: ExecResult) -> ExecResult {
-    match env::current_dir() {
-        Ok(path) => ExecResult::new(0, &path.to_string_lossy()),
-        Err(e) => ExecResult::new(1, &e.to_string()),
-    }
+pub fn execute(_args: RVec<RString>, last_result: ExecResult) -> ExecResult {
+    ExecResult::new(last_result.code, &last_result.message)
 }
 
 #[load]

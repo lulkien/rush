@@ -1,8 +1,5 @@
 use std::{
-    fs::{self, File},
-    io::Read,
-    path::Path,
-    sync::Arc,
+    cell::RefCell, fs::{self, File}, io::Read, path::{Path, PathBuf}, rc::Rc, str::FromStr
 };
 
 use anyhow::{Context, ensure};
@@ -10,66 +7,51 @@ use log::{debug, info};
 use rush_interface::CommandRef;
 
 use crate::{
-    env::read_rush_data_dirs,
-    plugin::{
-        PluginMetadata,
-        registry::{read_plugin_registry, write_plugin_registry},
-    },
+    env::EnvRegistry,
+    plugin::{PluginMetadata, PluginRegistry},
+    types::DashRegistry,
 };
 
-pub fn get_plugin(name: &str) -> anyhow::Result<Arc<CommandRef>> {
-    // Try optimistic read first
-    {
-        let registry_reader = read_plugin_registry()?;
-        if let Some(metadata) = registry_reader.borrow_ref(name)
-            && metadata.is_loaded()
-        {
-            return Ok(metadata.plugin.clone().unwrap());
-        }
-    }
+pub(super) fn load_plugin<P: AsRef<Path>>(plugin_path: P) -> Option<Rc<CommandRef>> {
+    let path = plugin_path.as_ref();
 
-    // Get write lock
-    let mut registry_writer = write_plugin_registry()?;
+    // Load lib header
+    let lib = abi_stable::library::lib_header_from_path(path).ok()?;
 
-    let metadata_mut = registry_writer
-        .borrow_mut(name)
-        .ok_or_else(|| anyhow::anyhow!("{}: command not found", name))?;
+    let module = lib.init_root_module::<CommandRef>().ok()?;
 
-    let plugin = load_plugin(&metadata_mut.path);
-    metadata_mut.plugin = plugin.clone();
+    module.load()();
 
-    plugin.ok_or_else(|| anyhow::anyhow!("{}: plugin failed to load", name))
+    debug!("Loaded plugin: {}", module.plugin_name()().clone());
+
+    Some(Rc::new(module))
 }
 
-// pub fn reload_plugin(name: &str) -> anyhow::Result<Arc<CommandRef>> {
-//     let mut registry_writer = write_plugin_registry()?;
-//
-//     let metadata_mut = registry_writer
-//         .borrow_mut(name)
-//         .ok_or_else(|| anyhow::anyhow!("{}: command not found", name))?;
-//
-//     metadata_mut.plugin = None;
-//
-//     let plugin = load_plugin(&metadata_mut.path);
-//     metadata_mut.plugin = plugin.clone();
-//
-//     plugin.ok_or_else(|| anyhow::anyhow!("{}: plugin failed to load", name))
-// }
-
-pub(super) fn discover_plugins() -> anyhow::Result<()> {
+pub(super) fn discover(plugin: &mut PluginRegistry, env: &EnvRegistry) -> anyhow::Result<()> {
     let mut registered_count = 0;
 
-    read_rush_data_dirs()?.iter().for_each(|path| {
-        let plugin_path = path.join("plugins");
-        registered_count += discover_plugins_from_dir(plugin_path).unwrap_or_default();
+    env.get_variable("RUSH_DATA_PATH")?.iter().for_each(|path| {
+        registered_count +=
+            discover_from_path(plugin, PathBuf::from_str(path).unwrap().join("plugins"))
+                .unwrap_or_default();
     });
+
+    env.get_variable("RUSH_PLUGIN_PATH")?
+        .iter()
+        .for_each(|path| {
+            registered_count +=
+                discover_from_path(plugin, PathBuf::from_str(path).unwrap()).unwrap_or_default();
+        });
 
     info!("Registered {} plugin(s)", registered_count);
 
     Ok(())
 }
 
-fn discover_plugins_from_dir<P: AsRef<Path>>(path: P) -> anyhow::Result<usize> {
+fn discover_from_path<P: AsRef<Path>>(
+    plugin: &mut PluginRegistry,
+    path: P,
+) -> anyhow::Result<usize> {
     let dir_path = path.as_ref();
     let mut registered_count = 0;
 
@@ -100,7 +82,7 @@ fn discover_plugins_from_dir<P: AsRef<Path>>(path: P) -> anyhow::Result<usize> {
             if let Ok(metadata) = PluginMetadata::from_raw_metadata(dir_path, &buf) {
                 debug!("Registered plugin path: {}", metadata.name);
                 registered_count += 1;
-                write_plugin_registry()?.add(&metadata.name.clone(), metadata);
+                plugin.register(&metadata.name.clone(), Rc::new(RefCell::new(metadata)));
             }
         }
     }
@@ -115,19 +97,4 @@ fn is_metadata_file<P: AsRef<Path>>(path: P) -> bool {
         return true;
     }
     false
-}
-
-fn load_plugin<P: AsRef<Path>>(plugin_path: P) -> Option<Arc<CommandRef>> {
-    let path = plugin_path.as_ref();
-
-    // Load lib header
-    let lib = abi_stable::library::lib_header_from_path(path).ok()?;
-
-    let module = lib.init_root_module::<CommandRef>().ok()?;
-
-    module.load()();
-
-    debug!("Loaded plugin: {}", module.plugin_name()().clone());
-
-    Some(Arc::new(module))
 }

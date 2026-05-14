@@ -1,74 +1,76 @@
-use std::{fs::File, time::Instant};
+use std::{fs::File, path::PathBuf};
 
-use abi_stable::std_types::RVec;
-use log::{error, info};
+use env_logger::{Builder, Env};
+use log::{debug, error};
 use rustyline::error::ReadlineError;
 
-mod env;
-mod executor;
-mod init;
+use crate::{executor::Executor, input::InputHandler, lexer::Lexer};
+pub use rush_interface::ExecResult;
+
+pub mod env;
+pub mod executor;
 mod input;
-mod plugin;
-mod shell_builtins;
+mod lexer;
+pub mod plugin;
+pub mod shell_builtins;
+pub mod types;
+pub mod user;
 
 pub fn start_shell() -> anyhow::Result<()> {
-    let start = Instant::now();
+    // Init logger
+    Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    // Init init module
-    init::init_module()?;
+    let user_dirs = user::init_module()?;
+    let env = env::init_module(&user_dirs)?;
 
-    // Init env module and add user paths
-    env::init_module()?;
-    env::add_rush_data_dirs(init::get_user_data_dir()?, true)?;
-    env::add_rush_config_dirs(init::get_user_config_dir()?, true)?;
+    let executor =
+        executor::init_module(shell_builtins::init_module()?, plugin::init_module(&env)?)?;
 
-    shell_builtins::init_module()?;
+    let mut input_handler = InputHandler::new()?;
 
-    // Init plugin module
-    plugin::init_module()?;
+    let history_file = PathBuf::from(user_dirs.get_cache_dir()).join(".history");
+    if let Err(e) = File::create_new(&history_file) {
+        debug!(
+            "Failed to create history file: {}. Error: {e}",
+            history_file.display()
+        )
+    }
 
-    // Init command executor module
-    executor::init_module()?;
+    // Enter main loop
+    enter_repl(&mut input_handler, &history_file, &executor)?;
 
-    // Init user input module
-    input::init_module()?;
-
-    let elapsed = start.elapsed();
-
-    let elapsed_string = if elapsed.as_micros() < 1000 {
-        format!("{} µs", elapsed.as_micros())
-    } else if elapsed.as_millis() < 1000 {
-        format!("{} ms", elapsed.as_millis())
-    } else {
-        format!("{} s", elapsed.as_secs_f64())
-    };
-
-    info!("Shell initialization took: {}", elapsed_string);
-
-    enter_repl()?;
-
-    let history_file = init::get_user_cache_dir()?.join(".history");
-    input::save_history(&history_file)?;
-
-    eprintln!("quit");
-
+    eprintln!("Bye bye");
     Ok(())
 }
 
-fn enter_repl() -> anyhow::Result<()> {
-    let history_file = init::get_user_cache_dir()?.join(".history");
-    let _ = File::create_new(&history_file);
-
-    input::load_history(&history_file)?;
+fn enter_repl(
+    input_handler: &mut InputHandler,
+    history_file: &PathBuf,
+    executor: &Executor,
+) -> anyhow::Result<()> {
+    input_handler.load_history(history_file)?;
 
     // Enter main loop
     loop {
-        let prompt = executor::execute_command("rush-prompt", RVec::new()).message;
+        let prompt = executor
+            .execute_command(types::Command::new("rush-prompt"))
+            .message;
 
-        match input::readline(&prompt) {
+        let result = input_handler.readline(&prompt);
+
+        match result {
             Ok(line) => {
-                input::add_history(&line)?;
-                executor::execute_user_input(&line);
+                input_handler.add_history(&line)?;
+
+                let pipe_list = match Lexer::new(&line).parse_line() {
+                    Ok(list) => list,
+                    Err(e) => {
+                        eprintln!("{e}");
+                        continue;
+                    }
+                };
+
+                let _result = executor.execute_command_pipe_list(pipe_list);
             }
             Err(ReadlineError::Interrupted) => {
                 eprintln!("^C");
@@ -83,5 +85,7 @@ fn enter_repl() -> anyhow::Result<()> {
         }
     }
 
-    Ok(()) // It's not ok but fine, we gonna handle later
+    input_handler.save_history(history_file)?;
+
+    Ok(())
 }

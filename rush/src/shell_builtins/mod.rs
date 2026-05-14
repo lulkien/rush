@@ -1,71 +1,72 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, OnceLock, RwLock, RwLockReadGuard},
-};
+use std::{cell::RefCell, rc::Rc};
 
 use abi_stable::std_types::{RString, RVec};
-use anyhow::bail;
+use anyhow::anyhow;
+use dashmap::{DashMap, try_result::TryResult};
+use log::warn;
 use rush_interface::ExecResult;
 
-mod exit;
-mod plugin;
-mod shared;
+use crate::types::{Command, DashRegistry};
 
-static BUILTINS_REGISTRY: OnceLock<RwLock<BuiltinsRegistry>> = OnceLock::new();
+mod exit;
+mod shared;
 
 #[allow(unused)]
 pub trait BuiltinCommand: Send + Sync {
+    fn plugin_name(&self) -> RString;
+    fn print_desc(&self);
     fn print_help(&self);
     fn print_version(&self);
-    fn execute(&self, args: RVec<RString>) -> ExecResult;
+    fn execute(&self, args: RVec<RString>, last_result: ExecResult) -> ExecResult;
 }
 
+type RegistryTypeRaw = Box<dyn BuiltinCommand>;
+type RegistryType = Rc<RefCell<RegistryTypeRaw>>;
+
 #[derive(Default)]
-pub struct BuiltinsRegistry {
-    commands: HashMap<String, Arc<Box<dyn BuiltinCommand>>>,
+pub struct BuiltinsRegistry(DashMap<String, RegistryType>);
+
+impl DashRegistry<RegistryTypeRaw> for BuiltinsRegistry {
+    fn register(&self, name: &str, builtin: RegistryType) {
+        if self.contains(name) {
+            warn!("[OVERRIDE WARNING] Shell builtin has been registered.");
+        }
+        self.0.insert(name.to_string(), builtin);
+    }
+
+    fn unregister(&self, name: &str) {
+        self.0.remove(name);
+    }
+
+    fn contains(&self, name: &str) -> bool {
+        self.0.contains_key(name)
+    }
+
+    fn get(&self, name: &str) -> anyhow::Result<RegistryType> {
+        match self.0.try_get_mut(name) {
+            TryResult::Absent => Err(anyhow!("Builtin not existed: {name}")),
+            TryResult::Locked => Err(anyhow!("Registry locked. PLEASE CHECK!!!")),
+            TryResult::Present(command) => Ok(command.clone()),
+        }
+    }
 }
 
 impl BuiltinsRegistry {
-    fn insert_command(
-        &mut self,
-        name: &str,
-        command: Arc<Box<dyn BuiltinCommand>>,
-    ) -> anyhow::Result<()> {
-        if self.contains(name) {
-            bail!("{}: built-in command already exists", name);
-        }
-        self.commands.insert(name.to_string(), command);
-        Ok(())
-    }
-
-    pub fn contains(&self, name: &str) -> bool {
-        self.commands.contains_key(name)
-    }
-
-    pub fn execute(&self, builtin_name: &str, args: RVec<RString>) -> ExecResult {
-        if let Some(command) = self.commands.get(builtin_name) {
-            command.execute(args)
-        } else {
-            ExecResult::new(1, &format!("{}: built-in command not found", builtin_name))
+    pub fn execute(&self, command: Command, last_result: ExecResult) -> ExecResult {
+        match self.get(&command.name) {
+            Ok(command_entry) => command_entry
+                .as_ref()
+                .borrow()
+                .execute(command.args, last_result),
+            Err(e) => ExecResult::new(1, format!("{e}").as_str()),
         }
     }
 }
 
-pub fn builtins_registry() -> anyhow::Result<RwLockReadGuard<'static, BuiltinsRegistry>> {
-    BUILTINS_REGISTRY
-        .get_or_init(|| RwLock::new(BuiltinsRegistry::default()))
-        .read()
-        .map_err(|e| anyhow::anyhow!("BUILTINS_REGISTRY read lock poisoned: {e}"))
-}
+pub fn init_module() -> anyhow::Result<BuiltinsRegistry> {
+    let builtin_registry = BuiltinsRegistry::default();
 
-pub fn init_module() -> anyhow::Result<()> {
-    let mut builtins = BUILTINS_REGISTRY
-        .get_or_init(|| RwLock::new(BuiltinsRegistry::default()))
-        .write()
-        .map_err(|e| anyhow::anyhow!("BUILTINS_REGISTRY write lock poisoned: {e}"))?;
+    builtin_registry.register("exit", Rc::new(RefCell::new(Box::new(exit::Command {}))));
 
-    builtins.insert_command("exit", Arc::new(Box::new(exit::Command {})))?;
-    builtins.insert_command("plugin", Arc::new(Box::new(plugin::Command {})))?;
-
-    Ok(())
+    Ok(builtin_registry)
 }

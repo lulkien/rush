@@ -10,6 +10,26 @@ use std::{
 static HOSTNAME: OnceLock<Option<String>> = OnceLock::new();
 static USERNAME: OnceLock<Option<String>> = OnceLock::new();
 
+#[plugin_name]
+pub fn plugin_name() -> RString {
+    env!("CARGO_PKG_NAME").into()
+}
+
+#[plugin_desc]
+pub fn plugin_desc() -> RString {
+    env!("CARGO_PKG_DESCRIPTION").into()
+}
+
+#[plugin_version]
+pub fn plugin_version() -> RString {
+    env!("CARGO_PKG_VERSION").into()
+}
+
+#[plugin_help]
+pub fn plugin_help() -> RString {
+    "T.B.D".into()
+}
+
 fn get_hostname() -> &'static Option<String> {
     HOSTNAME.get_or_init(|| gethostname::gethostname().into_string().ok())
 }
@@ -103,28 +123,8 @@ impl PromptBuilder {
     }
 }
 
-#[plugin_name]
-pub fn plugin_name() -> RString {
-    env!("CARGO_PKG_NAME").into()
-}
-
-#[print_desc]
-pub fn print_desc() {
-    eprintln!("{}", env!("CARGO_PKG_DESCRIPTION"));
-}
-
-#[print_help]
-pub fn print_help() {
-    eprintln!("T.B.D");
-}
-
-#[print_version]
-pub fn print_version() {
-    eprintln!("{}", env!("CARGO_PKG_VERSION"));
-}
-
 #[execute]
-pub fn execute(_args: RVec<RString>) -> ExecResult {
+pub fn execute(_args: RVec<RString>, _last_result: ExecResult) -> ExecResult {
     let username = get_username().clone();
     let hostname = get_hostname().clone();
     let home_path = dirs::home_dir();

@@ -1,42 +1,47 @@
-#![allow(unused)]
+use anyhow::anyhow;
+use dashmap::{DashMap, try_result::TryResult};
 
-mod macros;
+use crate::user::UserDirectoryRegistry;
 
-use std::{
-    path::PathBuf,
-    sync::{OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
-};
+mod default;
 
-use macros::create_dir_registry;
+#[derive(Default)]
+pub struct EnvRegistry(DashMap<String, Vec<String>>);
 
-create_dir_registry!(rush_data_dirs, RUSH_DATA_DIRS, "Rush data directories");
-create_dir_registry!(
-    rush_config_dirs,
-    RUSH_CONFIG_DIRS,
-    "Rush configuration directories"
-);
+#[allow(unused)]
+impl EnvRegistry {
+    pub fn get_variable(&self, name: &str) -> anyhow::Result<Vec<String>> {
+        match self.0.try_get(name) {
+            TryResult::Absent => Ok(vec![]),
+            TryResult::Locked => Err(anyhow!("EnvRegistry is locked")),
+            TryResult::Present(value) => Ok(value.clone()),
+        }
+    }
 
-fn init_default_data_dirs() -> anyhow::Result<()> {
-    let mut data_dirs = write_rush_data_dirs()?;
-    let mut defaults_dirs: Vec<PathBuf> =
-        vec!["/usr/local/share/rush".into(), "/usr/share/rush".into()];
+    pub fn set_variable(&self, name: &str, value: Vec<String>) -> Option<Vec<String>> {
+        self.0.insert(name.to_owned(), value)
+    }
 
-    data_dirs.append(&mut defaults_dirs);
-
-    Ok(())
+    pub fn unset_variable(&self, name: &str) -> Option<(String, Vec<String>)> {
+        self.0.remove(name)
+    }
 }
 
-fn init_default_config_dirs() -> anyhow::Result<()> {
-    let mut config_dirs = write_rush_config_dirs()?;
-    let mut defaults_dirs: Vec<PathBuf> = vec!["/etc/rush".into()];
+pub fn init_module(user_dirs: &UserDirectoryRegistry) -> anyhow::Result<EnvRegistry> {
+    let mut env = EnvRegistry::default();
 
-    config_dirs.append(&mut defaults_dirs);
+    default::setup_path(&mut env, user_dirs)?;
 
-    Ok(())
+    load_exist_environment(&mut env)?;
+
+    Ok(env)
 }
 
-pub fn init_module() -> anyhow::Result<()> {
-    init_default_data_dirs()?;
-    init_default_config_dirs()?;
+fn load_exist_environment(env: &mut EnvRegistry) -> anyhow::Result<()> {
+    for (key, value) in std::env::vars() {
+        let parts: Vec<String> = value.split(':').map(String::from).collect();
+        log::debug!("Loaded environment variable: {}: {:?}", key, parts);
+        env.set_variable(&key, parts);
+    }
     Ok(())
 }

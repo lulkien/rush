@@ -11,6 +11,14 @@ static DESC_STRING: &str = "Exit from current shell with code.\nexit is a shell 
 pub(super) struct Command;
 
 impl BuiltinCommand for Command {
+    fn plugin_name(&self) -> RString {
+        BUILTIN_NAME.into()
+    }
+
+    fn print_desc(&self) {
+        eprintln!("{}", DESC_STRING);
+    }
+
     fn print_help(&self) {
         let usage = format!("Usage: {} [-h | -v | <plugin-name>]", BUILTIN_NAME);
         let options = [
@@ -42,10 +50,10 @@ impl BuiltinCommand for Command {
     }
 
     fn print_version(&self) {
-        println!("{}", env!("CARGO_PKG_VERSION"));
+        eprintln!("{}", env!("CARGO_PKG_VERSION"));
     }
 
-    fn execute(&self, args: RVec<RString>) -> rush_interface::ExecResult {
+    fn execute(&self, args: RVec<RString>, _last_result: ExecResult) -> ExecResult {
         match args.as_slice() {
             [] => process::exit(0),
 

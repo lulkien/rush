@@ -1,73 +1,84 @@
+use std::{cell::RefCell, rc::Rc};
+
+use anyhow::anyhow;
+use dashmap::{DashMap, try_result::TryResult};
+use rush_interface::ExecResult;
+
+pub use crate::plugin::metadata::PluginMetadata;
+use crate::{env::EnvRegistry, types::{Command, DashRegistry}};
+
 mod lazy;
-mod registry;
 
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+mod metadata;
 
-use anyhow::ensure;
-use rush_interface::CommandRef;
+type RegistryTypeRaw = PluginMetadata;
+type RegistryType = Rc<RefCell<RegistryTypeRaw>>;
 
-pub use lazy::get_plugin;
+#[derive(Default)]
+pub struct PluginRegistry(pub DashMap<String, RegistryType>);
 
-struct PluginMetadata {
-    name: String,
-    path: PathBuf,
-    plugin: Option<Arc<CommandRef>>,
-}
-
-impl PluginMetadata {
-    pub fn is_loaded(&self) -> bool {
-        self.plugin.is_some()
+impl DashRegistry<RegistryTypeRaw> for PluginRegistry {
+    fn register(&self, name: &str, metadata: RegistryType) {
+        self.0.insert(name.to_string(), metadata);
     }
 
-    pub fn from_raw_metadata<P: AsRef<Path>>(metadata_path: P, buf: &[u8]) -> anyhow::Result<Self> {
-        let mut pos: usize = 0;
+    fn unregister(&self, name: &str) {
+        self.0.remove(name);
+    }
 
-        let total_len = buf.len();
+    fn contains(&self, name: &str) -> bool {
+        self.0.contains_key(name)
+    }
 
-        // Extract plugin name length from buffer[0..2]
-        let header = u16::from_ne_bytes(buf[pos..pos + 2].try_into()?) as usize;
-        pos += 2;
-
-        // Ensure buffer has valid length
-        ensure!(header == total_len, "Invalid buffer length");
-
-        // Extract plugin name header from buffer[2..4]
-        let name_len = u16::from_ne_bytes(buf[pos..pos + 2].try_into()?) as usize;
-        pos += 2;
-
-        // Ensure plugin name header is valid
-        ensure!(total_len > pos + name_len, "Invalid plugin name header");
-
-        // Extract plugin name
-        let name = String::from_utf8(buf[pos..pos + name_len].to_vec())?;
-        pos += name_len;
-
-        // Extract plugin filename header from next 2 bytes
-        let filename_len = u16::from_ne_bytes(buf[pos..pos + 2].try_into()?) as usize;
-        pos += 2;
-
-        // Ensure plugin filename header is valid
-        ensure!(
-            total_len == pos + filename_len,
-            "Invalid plugin name header"
-        );
-
-        let filename = String::from_utf8(buf[pos..pos + filename_len].to_vec())?;
-        // pos += filename_len; // never read again
-
-        Ok(Self {
-            name,
-            path: metadata_path.as_ref().join(filename),
-            plugin: None,
-        })
+    fn get(&self, name: &str) -> anyhow::Result<RegistryType> {
+        match self.0.try_get(name) {
+            TryResult::Absent => Err(anyhow!("Plugin not existed: {name}")),
+            TryResult::Locked => Err(anyhow!("Registry locked. PLEASE CHECK!!!")),
+            TryResult::Present(metadata) => Ok(metadata.clone()),
+        }
     }
 }
 
-pub fn init_module() -> anyhow::Result<()> {
-    lazy::discover_plugins()?;
+impl PluginRegistry {
+    pub fn execute(&self, command: Command, last_result: ExecResult) -> ExecResult {
+        let plugin_metadata = match self.get(&command.name) {
+            Ok(metadata) => metadata,
+            Err(e) => return ExecResult::new(1, format!("{e}").as_str()),
+        };
 
-    Ok(())
+        let mut metadata_ref = plugin_metadata.as_ref().borrow_mut();
+
+        if !metadata_ref.is_loaded() {
+            let plugin = match lazy::load_plugin(&metadata_ref.path) {
+                Some(p) => p,
+                None => {
+                    return ExecResult::new(
+                        1,
+                        format!("{}: plugin failed to load", command.name).as_str(),
+                    );
+                }
+            };
+
+            metadata_ref.plugin = Some(plugin);
+        }
+
+        // Drop mutable borrow, we done here
+        drop(metadata_ref);
+
+        plugin_metadata
+            .as_ref()
+            .borrow()
+            .plugin
+            .as_ref()
+            .expect("Plugin must be valid at this point")
+            .execute()(command.args, last_result)
+    }
+}
+
+pub fn init_module(env: &EnvRegistry) -> anyhow::Result<PluginRegistry> {
+    let mut plugin_registry = PluginRegistry::default();
+
+    lazy::discover(&mut plugin_registry, env)?;
+
+    Ok(plugin_registry)
 }

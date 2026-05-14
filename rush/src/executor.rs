@@ -1,48 +1,109 @@
-use std::{
-    io::{Write, stderr},
-    str::FromStr,
-};
-
-use abi_stable::std_types::{RString, RVec};
-use log::debug;
+use dashmap::DashMap;
 use rush_interface::ExecResult;
 
-use crate::{plugin::get_plugin, shell_builtins};
+use crate::{
+    plugin::PluginRegistry,
+    shell_builtins::BuiltinsRegistry,
+    types::{Command, CommandPipe, CommandPipeList, DashRegistry},
+};
 
-pub fn execute_user_input(input: &str) {
-    if input.is_empty() {
-        return;
+enum ExecutionFrom {
+    Builtin,
+    Plugin,
+    NotFound,
+}
+
+pub struct Executor {
+    builtin_reg: BuiltinsRegistry,
+    plugin_reg: PluginRegistry,
+    entry_point_cache: DashMap<String, ExecutionFrom>,
+}
+
+impl Executor {
+    pub fn new(builtin_reg: BuiltinsRegistry, plugin_reg: PluginRegistry) -> Self {
+        Self {
+            builtin_reg,
+            plugin_reg,
+            entry_point_cache: DashMap::default(),
+        }
     }
 
-    let mut args: RVec<RString> = input
-        .split_whitespace()
-        .filter_map(|s| RString::from_str(s).ok())
-        .collect();
+    pub fn execute_command_pipe_list(&self, pipes: CommandPipeList) -> ExecResult {
+        let mut last_result = ExecResult::default();
 
-    let cmd = args.remove(0);
+        pipes.into_iter().for_each(|pipe| {
+            last_result = self.execute_pipe(pipe);
+        });
 
-    let status = if let Ok(builtins_reg) = shell_builtins::builtins_registry()
-        && builtins_reg.contains(cmd.as_str())
-    {
-        builtins_reg.execute(&cmd, args)
-    } else {
-        execute_command(&cmd, args)
-    };
+        last_result
+    }
 
-    debug!("{:?}", status);
+    fn execute_pipe(&self, pipe: CommandPipe) -> ExecResult {
+        let mut last_result = ExecResult::default();
 
-    if status.code.ne(&0) {
-        let _ = stderr().write_all(format!("{}\n", status.message).as_bytes());
+        pipe.into_iter().for_each(|command| {
+            last_result = self.execute_command_with_result(command, last_result.clone());
+        });
+
+        if last_result.code == 0 {
+            println!("{}", last_result.message);
+        } else {
+            eprintln!("{}", last_result.message);
+        }
+
+        last_result
+    }
+
+    pub fn execute_command(&self, command: Command) -> ExecResult {
+        self.execute_command_with_result(command, ExecResult::default())
+    }
+
+    fn execute_command_with_result(&self, command: Command, last_result: ExecResult) -> ExecResult {
+        if let Some(cache_entry) = self.entry_point_cache.get(command.name.as_str()) {
+            match cache_entry.value() {
+                ExecutionFrom::Builtin => {
+                    return self.builtin_reg.execute(command, last_result);
+                }
+                ExecutionFrom::Plugin => {
+                    return self.plugin_reg.execute(command, last_result);
+                }
+                ExecutionFrom::NotFound => {
+                    return ExecResult::new(
+                        1,
+                        format!("{}: Command not found", command.name.as_str()).as_str(),
+                    );
+                }
+            }
+        }
+
+        self.lookup_and_execute(command, last_result)
+    }
+
+    fn lookup_and_execute(&self, command: Command, last_result: ExecResult) -> ExecResult {
+        if self.plugin_reg.contains(&command.name) {
+            self.entry_point_cache
+                .insert(command.name.to_string(), ExecutionFrom::Plugin);
+            self.plugin_reg.execute(command, last_result)
+        } else if self.builtin_reg.contains(&command.name) {
+            self.entry_point_cache
+                .insert(command.name.to_string(), ExecutionFrom::Builtin);
+            self.builtin_reg.execute(command, last_result)
+        } else {
+            self.entry_point_cache
+                .insert(command.name.to_string(), ExecutionFrom::NotFound);
+            ExecResult::new(
+                1,
+                format!("{}: Command not found", command.name.as_str()).as_str(),
+            )
+        }
     }
 }
 
-pub fn execute_command(cmd: &str, argv: RVec<RString>) -> ExecResult {
-    match get_plugin(cmd) {
-        Ok(plugin) => plugin.execute()(argv),
-        Err(e) => ExecResult::new(101, &format!("{e}")),
-    }
-}
+pub fn init_module(
+    builtin_reg: BuiltinsRegistry,
+    plugin_reg: PluginRegistry,
+) -> anyhow::Result<Executor> {
+    let executor = Executor::new(builtin_reg, plugin_reg);
 
-pub fn init_module() -> anyhow::Result<()> {
-    Ok(())
+    Ok(executor)
 }

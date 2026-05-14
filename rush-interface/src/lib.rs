@@ -13,10 +13,10 @@ use abi_stable::{
 pub struct Command {
     pub load: extern "C" fn(),
     pub plugin_name: extern "C" fn() -> RString,
-    pub print_help: extern "C" fn(),
-    pub print_desc: extern "C" fn(),
-    pub print_version: extern "C" fn(),
-    pub execute: extern "C" fn(RVec<RString>) -> ExecResult,
+    pub plugin_help: extern "C" fn() -> RString,
+    pub plugin_desc: extern "C" fn() -> RString,
+    pub plugin_version: extern "C" fn() -> RString,
+    pub execute: extern "C" fn(RVec<RString>, ExecResult) -> ExecResult,
 }
 
 #[repr(C)]
@@ -46,4 +46,3 @@ impl RootModule for CommandRef {
     const NAME: &'static str = "rush_plugin";
     const VERSION_STRINGS: VersionStrings = package_version_strings!();
 }
-
