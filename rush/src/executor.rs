@@ -1,4 +1,4 @@
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 
 use dashmap::DashMap;
 use nix::{
@@ -171,7 +171,7 @@ impl Executor {
 }
 
 /// Mark an fd close-on-exec so it doesn't leak through future exec calls.
-fn set_cloexec(fd: std::os::fd::RawFd) {
+fn set_cloexec(fd: RawFd) {
     unsafe {
         let flags = libc::fcntl(fd, libc::F_GETFD);
         if flags != -1 {
@@ -180,14 +180,26 @@ fn set_cloexec(fd: std::os::fd::RawFd) {
     }
 }
 
-/// Print result: exit 0 + non-empty message → stdout; otherwise → stderr.
-fn print_result(result: &ExecResult) {
-    if result.code == 0 {
-        if !result.message.is_empty() {
-            println!("{}", result.message);
+/// Write a byte slice to a raw fd, handling partial writes and EINTR.
+/// Like fish's `write_loop` — no Rust stdio buffering, fork-safe.
+fn write_all(fd: RawFd, mut data: &[u8]) {
+    while !data.is_empty() {
+        let n = unsafe { libc::write(fd, data.as_ptr() as *const _, data.len()) };
+        if n > 0 {
+            data = &data[n as usize..];
+        } else if n == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
+            break;
         }
-    } else {
-        eprintln!("{}", result.message);
+    }
+}
+
+/// Print result directly to fd 1 (stdout) or fd 2 (stderr).
+/// Uses raw `write` syscalls — no `println!`/`eprintln!` buffering.
+fn print_result(result: &ExecResult) {
+    let fd: RawFd = if result.code == 0 { 1 } else { 2 };
+    if !result.message.is_empty() {
+        write_all(fd, result.message.as_bytes());
+        write_all(fd, b"\n");
     }
 }
 
