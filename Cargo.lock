@@ -2071,9 +2071,21 @@ dependencies = [
 name = "rush"
 version = "0.1.0"
 dependencies = [
- "abi_stable",
  "anyhow",
  "clap",
+ "env_logger",
+ "log",
+ "rush-core",
+ "rustyline",
+ "skim",
+]
+
+[[package]]
+name = "rush-core"
+version = "0.1.0"
+dependencies = [
+ "abi_stable",
+ "anyhow",
  "dashmap",
  "env_logger",
  "log",
@@ -2082,8 +2094,6 @@ dependencies = [
  "paste",
  "rush-interface",
  "rush-macros",
- "rustyline",
- "skim",
 ]
 
 [[package]]

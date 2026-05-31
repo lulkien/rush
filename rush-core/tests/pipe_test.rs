@@ -1,12 +1,12 @@
 /// Integration test for pipe output correctness.
-use rush::executor::Executor;
-use rush::types::{Command, CommandPipe, CommandPipeList};
+use rush_core::executor::Executor;
+use rush_core::types::{Command, CommandPipe, CommandPipeList};
 
 fn setup() -> Executor {
-    let user_dirs = rush::user::init_module().unwrap();
-    let env = rush::env::init_module(&user_dirs).unwrap();
-    let builtins = rush::shell_builtins::init_module().unwrap();
-    let plugins = rush::plugin::init_module(&env).unwrap();
+    let user_dirs = rush_core::user::init_module().unwrap();
+    let env = rush_core::env::init_module(&user_dirs).unwrap();
+    let builtins = rush_core::shell_builtins::init_module().unwrap();
+    let plugins = rush_core::plugin::init_module(&env).unwrap();
     Executor::new(builtins, plugins)
 }
 
@@ -30,14 +30,14 @@ fn capture_stdout(executor: &Executor, pipe_list: CommandPipeList) -> String {
     std::mem::forget(stdout_fd);
     drop(w);
 
-    let program = rush::types::Program {
+    let program = rush_core::types::Program {
         items: pipe_list
             .into_iter()
             .map(|pipe| {
                 let commands: Vec<Command> = pipe.into_iter().collect();
-                rush::types::CompleteCommand {
-                    list: rush::types::AndOrList {
-                        first: rush::types::Pipeline {
+                rush_core::types::CompleteCommand {
+                    list: rush_core::types::AndOrList {
+                        first: rush_core::types::Pipeline {
                             negation: false,
                             commands,
                         },

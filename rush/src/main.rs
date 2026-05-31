@@ -1,5 +1,6 @@
 use clap::Parser;
-use rush::{execute_string, init_runtime, run_script, start_shell};
+use rush_core::{execute_string, init_runtime};
+use rush::run_script;
 
 /// Rush — a POSIX-compatible shell written in Rust.
 #[derive(Parser)]
@@ -18,7 +19,6 @@ fn main() {
     let cli = Cli::parse();
 
     if let Some(cmd) = cli.command {
-        // rush -c "echo hello"
         let (_user_dirs, executor, vars) = match init_runtime() {
             Ok(v) => v,
             Err(e) => {
@@ -31,14 +31,12 @@ fn main() {
             std::process::exit(1);
         }
     } else if let Some(file) = cli.file {
-        // rush script.sh
         if let Err(e) = run_script(&file) {
             eprintln!("rush: {e}");
             std::process::exit(1);
         }
     } else {
-        // rush (interactive)
-        if let Err(e) = start_shell() {
+        if let Err(e) = rush::start_shell() {
             eprintln!("{e}");
             std::process::exit(1);
         }

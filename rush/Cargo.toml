@@ -4,16 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-abi_stable = "0.11.3"
 anyhow = "1.0.100"
 clap = { version = "4", features = ["derive"] }
-dashmap = "6.1.0"
 env_logger = "0.11.8"
 log = { version = "0.4.29", features = ["serde", "std"] }
-logos = "0.15"
-paste = "1.0.15"
-rush-interface = { path = "../rush-interface" }
-rush-macros = { path = "../rush-macros" }
 rustyline = { version = "18.0.0", features = ["with-fuzzy", "custom-bindings"] }
 skim = "4"
-nix = { version = "0.31", features = ["process"] }
+rush-core = { path = "../rush-core" }
