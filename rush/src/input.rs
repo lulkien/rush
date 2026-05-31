@@ -104,6 +104,7 @@ impl InputHandler {
     pub fn new() -> anyhow::Result<Self> {
         let config = rustyline::Config::builder()
             .history_ignore_dups(true)?
+            .completion_type(rustyline::config::CompletionType::Fuzzy)
             .build();
         let helper = InputHelper::new();
         let mut editor: Editor<InputHelper, rustyline::history::FileHistory> =
@@ -131,6 +132,58 @@ impl InputHandler {
     pub fn add_history(&mut self, entry: &str) -> anyhow::Result<()> {
         self.editor.add_history_entry(entry)?;
         Ok(())
+    }
+
+    /// Launch an interactive fuzzy history search using the skim TUI.
+    /// Returns the selected entry, or None if cancelled.
+    pub fn history_search(&self) -> Option<String> {
+        use rustyline::history::History;
+        use skim::prelude::*;
+
+        // Collect history entries, newest first, deduplicated.
+        let h = self.editor.history();
+        let mut seen = std::collections::HashSet::new();
+        let mut history: Vec<String> = Vec::new();
+        for i in (0..h.len()).rev() {
+            if let Ok(Some(result)) =
+                h.get(i, rustyline::history::SearchDirection::Forward)
+            {
+                if seen.insert(result.entry.to_string()) {
+                    history.push(result.entry.to_string());
+                }
+            }
+        }
+
+        if history.is_empty() {
+            return None;
+        }
+
+        let options = SkimOptionsBuilder::default()
+            .prompt("history> ".to_string())
+            .reverse(true)
+            .height("50%".to_string())
+            .build()
+            .unwrap();
+
+        let (tx, rx): (SkimItemSender, SkimItemReceiver) = unbounded();
+        struct HistoryItem(String);
+        impl SkimItem for HistoryItem {
+            fn text(&self) -> std::borrow::Cow<'_, str> {
+                std::borrow::Cow::Borrowed(&self.0)
+            }
+        }
+        let items: Vec<std::sync::Arc<dyn SkimItem>> = history
+            .into_iter()
+            .map(|s| -> std::sync::Arc<dyn SkimItem> {
+                std::sync::Arc::new(HistoryItem(s))
+            })
+            .collect();
+        let _ = tx.send(items);
+        drop(tx);
+
+        Skim::run_with(options, Some(rx))
+            .ok()
+            .and_then(|out| out.selected_items.first().map(|item| item.output().to_string()))
     }
 
     pub fn save_history<P: AsRef<Path>>(&mut self, path: P) -> anyhow::Result<()> {

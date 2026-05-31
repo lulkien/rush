@@ -83,6 +83,22 @@ fn enter_repl(
 
         match result {
             Ok(line) => {
+                let trimmed = line.trim();
+
+                if trimmed == "history-search" || trimmed == "hf" {
+                    // Launch the interactive history TUI.
+                    if let Some(selected) = input_handler.history_search() {
+                        println!("{selected}");
+                        input_handler.add_history(&selected)?;
+                        // Execute the selected command.
+                        match execute_string(executor, &selected) {
+                            Ok(_) => {}
+                            Err(e) => eprintln!("rush: {e}"),
+                        }
+                    }
+                    continue;
+                }
+
                 input_handler.add_history(&line)?;
 
                 match execute_string(executor, &line) {
