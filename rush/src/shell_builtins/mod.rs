@@ -63,6 +63,10 @@ impl BuiltinsRegistry {
             Err(e) => ExecResult::new(1, format!("{e}").as_str()),
         }
     }
+
+    pub fn names(&self) -> Vec<String> {
+        self.0.iter().map(|e| e.key().clone()).collect()
+    }
 }
 
 pub fn init_module() -> anyhow::Result<BuiltinsRegistry> {

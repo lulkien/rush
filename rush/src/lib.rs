@@ -51,6 +51,7 @@ pub fn start_shell() -> anyhow::Result<()> {
     let (user_dirs, executor) = init_runtime()?;
 
     let mut input_handler = InputHandler::new()?;
+    input_handler.set_commands(executor.command_names());
 
     let history_file = PathBuf::from(user_dirs.get_cache_dir()).join(".history");
     if let Err(e) = File::create_new(&history_file) {

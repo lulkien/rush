@@ -73,6 +73,10 @@ impl PluginRegistry {
             .expect("Plugin must be valid at this point")
             .execute()(command.args)
     }
+
+    pub fn names(&self) -> Vec<String> {
+        self.0.iter().map(|e| e.key().clone()).collect()
+    }
 }
 
 pub fn init_module(env: &EnvRegistry) -> anyhow::Result<PluginRegistry> {

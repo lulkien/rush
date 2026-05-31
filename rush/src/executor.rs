@@ -98,6 +98,15 @@ impl Executor {
         self.execute_single(command)
     }
 
+    /// Collect all registered command names (builtins + plugins).
+    pub fn command_names(&self) -> Vec<String> {
+        let mut names = self.builtin_reg.names();
+        names.extend(self.plugin_reg.names());
+        names.sort();
+        names.dedup();
+        names
+    }
+
     fn execute_single(&self, command: Command) -> ExecResult {
         if command.name.is_empty() {
             return ExecResult::default();
