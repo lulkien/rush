@@ -725,7 +725,6 @@ dependencies = [
  "clap",
  "dashmap",
  "env_logger",
- "libc",
  "log",
  "logos",
  "nix",

@@ -1,5 +1,4 @@
 /// Integration test for pipe output correctness.
-/// Exercises the executor directly, bypassing the REPL.
 use rush::executor::Executor;
 use rush::types::{Command, CommandPipe, CommandPipeList};
 
@@ -14,18 +13,23 @@ fn setup() -> Executor {
 /// Run a pipe list and capture what gets written to stdout.
 fn capture_stdout(executor: &Executor, pipe_list: CommandPipeList) -> String {
     use std::io::Read;
-    use std::os::fd::FromRawFd;
+    use std::os::fd::{FromRawFd, OwnedFd, BorrowedFd};
+    use nix::unistd;
 
-    let mut fds = [0i32; 2];
-    assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
-    let (r, w): (i32, i32) = (fds[0], fds[1]);
+    fn raw_fd(fd: std::os::fd::RawFd) -> BorrowedFd<'static> {
+        unsafe { BorrowedFd::borrow_raw(fd) }
+    }
 
-    let saved_stdout = unsafe { libc::dup(libc::STDOUT_FILENO) };
-    assert_ne!(saved_stdout, -1, "dup failed");
-    assert_ne!(unsafe { libc::dup2(w, libc::STDOUT_FILENO) }, -1, "dup2 failed");
-    unsafe { libc::close(w); }
+    let stdout = raw_fd(nix::libc::STDOUT_FILENO);
 
-    // Build a Program from the flat pipe list and execute it.
+    let (r, w) = unistd::pipe().expect("pipe failed");
+    let saved = unistd::dup(stdout).expect("dup stdout");
+    // SAFETY: fd 1 is always open; we mem::forget to prevent drop from closing it.
+    let mut stdout_fd = unsafe { OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO) };
+    unistd::dup2(&w, &mut stdout_fd).expect("dup2 stdout → pipe");
+    std::mem::forget(stdout_fd);
+    drop(w);
+
     let program = rush::types::Program {
         items: pipe_list
             .into_iter()
@@ -46,16 +50,13 @@ fn capture_stdout(executor: &Executor, pipe_list: CommandPipeList) -> String {
     };
     executor.execute_program(&program);
 
-    // Restore stdout before reading
-    assert_ne!(
-        unsafe { libc::dup2(saved_stdout, libc::STDOUT_FILENO) },
-        -1,
-        "restore dup2 failed"
-    );
-    unsafe { libc::close(saved_stdout); }
+    let mut stdout_fd = unsafe { OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO) };
+    unistd::dup2(&saved, &mut stdout_fd).expect("restore stdout");
+    std::mem::forget(stdout_fd);
+    drop(saved);
 
     let mut output = String::new();
-    let reader = unsafe { std::fs::File::from_raw_fd(r) };
+    let reader = std::fs::File::from(r);
     let mut bufreader = std::io::BufReader::new(reader);
     bufreader.read_to_string(&mut output).unwrap();
     output
@@ -105,7 +106,6 @@ fn test_echo_no_trailing_newline() {
     pipe.append_command(make_cmd("echo", &["-n", "hello"]));
 
     let output = capture_stdout(&executor, single_pipe_list(pipe));
-    // echo -n produces "hello" (no \n). print_result adds one.
     assert_eq!(output, "hello\n", "got: {output:?}");
 }
 
@@ -119,7 +119,6 @@ fn test_pipe_three_commands() {
     pipe.append_command(make_cmd("cat", &[]));
 
     let output = capture_stdout(&executor, single_pipe_list(pipe));
-    // echo → cat → cat: should still be exactly "hello\n"
     assert_eq!(output, "hello\n", "got: {output:?}");
 }
 

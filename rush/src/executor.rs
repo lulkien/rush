@@ -1,9 +1,10 @@
-use std::os::fd::{AsRawFd, OwnedFd, RawFd};
+use std::os::fd::{BorrowedFd, OwnedFd, RawFd};
 
 use dashmap::DashMap;
 use nix::{
+    fcntl::{FcntlArg, FdFlag, fcntl},
     sys::wait::{waitpid, WaitStatus},
-    unistd::{ForkResult, Pid, fork, pipe},
+    unistd::{ForkResult, Pid, fork, pipe, write},
 };
 use rush_interface::ExecResult;
 
@@ -34,17 +35,14 @@ impl Executor {
         }
     }
 
-    /// Execute a parsed program (top-level AST entry point).
     pub fn execute_program(&self, program: &Program) -> ExecResult {
         let mut last_result = ExecResult::default();
 
         for item in &program.items {
             if item.background {
-                // TODO: background execution (fork + don't wait)
                 eprintln!("rush: background execution not yet implemented");
             }
 
-            // Walk the and-or list
             let list = &item.list;
             last_result = self.execute_pipeline(&list.first);
 
@@ -63,9 +61,7 @@ impl Executor {
         last_result
     }
 
-    /// Execute a single pipeline.
     fn execute_pipeline(&self, pipeline: &crate::types::Pipeline) -> ExecResult {
-        // Collect simple commands from the pipeline
         let commands: Vec<&Command> = pipeline.commands.iter().collect();
 
         if commands.is_empty() {
@@ -78,7 +74,6 @@ impl Executor {
                 match &cmd.kind {
                     CommandKind::Simple => {
                         let result = self.execute_single(cmd.clone());
-                        // Only print for non-compound commands
                         if cmd.redirects.is_empty() {
                             print_result(&result);
                         }
@@ -93,20 +88,16 @@ impl Executor {
                 }
             }
             _ => {
-                // Multi-command pipeline: fork children
                 let owned: Vec<Command> = commands.into_iter().cloned().collect();
                 self.execute_pipe_forked(owned)
             }
         }
     }
 
-    /// Run a single command in-process (no fork).
-    /// Used by the REPL for the prompt plugin.
     pub fn execute_command(&self, command: Command) -> ExecResult {
         self.execute_single(command)
     }
 
-    /// Look up and execute a single command via the registry.
     fn execute_single(&self, command: Command) -> ExecResult {
         if command.name.is_empty() {
             return ExecResult::default();
@@ -145,26 +136,15 @@ impl Executor {
         }
     }
 
-    /// Fork N child processes, connect them with N-1 Unix pipes,
-    /// wait for all children, return the last command's exit code.
-    ///
-    /// Like fish's execution engine, pipe fds are marked FD_CLOEXEC
-    /// to prevent leaks to grandchild processes.
-    ///
-    /// # Safety
-    ///
-    /// `fork()` is unsafe in multi-threaded programs. Rush is
-    /// single-threaded; each child runs one command then exits.
     fn execute_pipe_forked(&self, commands: Vec<Command>) -> ExecResult {
         let n = commands.len();
 
-        // Create N-1 pipes, mark each fd CLOEXEC (fish pattern).
         let mut pipes: Vec<(OwnedFd, OwnedFd)> = Vec::with_capacity(n.saturating_sub(1));
         for _ in 0..n.saturating_sub(1) {
             match pipe() {
                 Ok((r, w)) => {
-                    set_cloexec(r.as_raw_fd());
-                    set_cloexec(w.as_raw_fd());
+                    let _ = fcntl(&r, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC));
+                    let _ = fcntl(&w, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC));
                     pipes.push((r, w));
                 }
                 Err(e) => {
@@ -174,20 +154,22 @@ impl Executor {
         }
 
         let mut pids: Vec<Pid> = Vec::with_capacity(n);
+        // Borrow raw stdin/stdout once for reuse across loop iterations.
+        let stdin_fd = raw_fd(nix::libc::STDIN_FILENO);
+        let stdout_fd = raw_fd(nix::libc::STDOUT_FILENO);
 
         for i in 0..n {
+            // SAFETY: Rush is single-threaded; each child exits immediately.
             match unsafe { fork() } {
                 Ok(ForkResult::Child) => {
-                    // ── child ──────────────────────────────────
-                    // Wire stdin from previous pipe, stdout to next pipe.
                     if i > 0 {
-                        unsafe { libc::dup2(pipes[i - 1].0.as_raw_fd(), libc::STDIN_FILENO); }
+                        let mut target = nix::unistd::dup(stdin_fd).expect("dup stdin");
+                        nix::unistd::dup2(&pipes[i - 1].0, &mut target).expect("dup2 stdin");
                     }
                     if i < n - 1 {
-                        unsafe { libc::dup2(pipes[i].1.as_raw_fd(), libc::STDOUT_FILENO); }
+                        let mut target = nix::unistd::dup(stdout_fd).expect("dup stdout");
+                        nix::unistd::dup2(&pipes[i].1, &mut target).expect("dup2 stdout");
                     }
-                    // Drop OwnedFds — closes every pipe fd the child
-                    // replaced with dup2 or doesn't need.
                     drop(pipes);
 
                     let result = self.lookup_and_execute(commands[i].clone());
@@ -201,10 +183,6 @@ impl Executor {
             }
         }
 
-        // ── parent ──────────────────────────────────────────
-        // Close all pipe fds BEFORE waiting. If the parent still
-        // holds the write end, the reading child (e.g. cat) never
-        // sees EOF and blocks forever in read_to_string.
         drop(pipes);
 
         let mut last_code = 0i32;
@@ -218,31 +196,17 @@ impl Executor {
     }
 }
 
-/// Mark an fd close-on-exec so it doesn't leak through future exec calls.
-fn set_cloexec(fd: RawFd) {
-    unsafe {
-        let flags = libc::fcntl(fd, libc::F_GETFD);
-        if flags != -1 {
-            libc::fcntl(fd, libc::F_SETFD, flags | libc::FD_CLOEXEC);
-        }
-    }
-}
-
 /// Write a byte slice to a raw fd, handling partial writes and EINTR.
-/// Like fish's `write_loop` — no Rust stdio buffering, fork-safe.
 fn write_all(fd: RawFd, mut data: &[u8]) {
+    let fd_borrowed = raw_fd(fd);
     while !data.is_empty() {
-        let n = unsafe { libc::write(fd, data.as_ptr() as *const _, data.len()) };
-        if n > 0 {
-            data = &data[n as usize..];
-        } else if n == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
-            break;
+        match write(fd_borrowed, data) {
+            Ok(n) if n > 0 => data = &data[n..],
+            _ => break,
         }
     }
 }
 
-/// Print result directly to fd 1 (stdout) or fd 2 (stderr).
-/// Uses raw `write` syscalls — no `println!`/`eprintln!` buffering.
 fn print_result(result: &ExecResult) {
     let fd: RawFd = if result.code == 0 { 1 } else { 2 };
     if !result.message.is_empty() {
@@ -252,6 +216,12 @@ fn print_result(result: &ExecResult) {
             write_all(fd, b"\n");
         }
     }
+}
+
+/// Create a `BorrowedFd` from a raw fd number.
+fn raw_fd(fd: RawFd) -> BorrowedFd<'static> {
+    // SAFETY: fd is a valid open file descriptor (standard fds or our own).
+    unsafe { BorrowedFd::borrow_raw(fd) }
 }
 
 pub fn init_module(

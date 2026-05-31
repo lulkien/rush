@@ -16,4 +16,3 @@ rush-interface = { path = "../rush-interface" }
 rush-macros = { path = "../rush-macros" }
 rustyline = "18.0.0"
 nix = { version = "0.31", features = ["process"] }
-libc = "0.2"
