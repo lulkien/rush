@@ -65,7 +65,7 @@ fn capture_stdout(executor: &Executor, pipe_list: CommandPipeList) -> String {
 fn make_cmd(name: &str, args: &[&str]) -> Command {
     let mut cmd = Command::new(name);
     for a in args {
-        cmd.args.push((*a).into());
+        cmd.args.push((*a).to_string());
     }
     cmd
 }

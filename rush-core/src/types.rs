@@ -1,7 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
 
-use abi_stable::std_types::{RString, RVec};
-
 // ── redirect types ───────────────────────────────────────────────────
 
 /// POSIX redirection operator.
@@ -23,7 +21,7 @@ pub enum RedirectOp {
 #[derive(Clone, Debug, Default)]
 pub struct Redirect {
     pub op: RedirectOp,
-    pub target: RString,
+    pub target: String,
 }
 
 // ── AST root ─────────────────────────────────────────────────────────
@@ -81,8 +79,8 @@ pub struct Pipeline {
 /// are empty for compound commands.  The executor dispatches on `kind`.
 #[derive(Clone, Debug, Default)]
 pub struct Command {
-    pub name: RString,
-    pub args: RVec<RString>,
+    pub name: String,
+    pub args: Vec<String>,
     pub redirects: Vec<Redirect>,
     pub kind: CommandKind,
 }
@@ -90,14 +88,14 @@ pub struct Command {
 impl Command {
     pub fn new(command_name: &str) -> Self {
         Self {
-            name: command_name.into(),
+            name: command_name.to_string(),
             ..Default::default()
         }
     }
 
-    pub fn new_with_args(command_name: &str, command_args: RVec<RString>) -> Self {
+    pub fn new_with_args(command_name: &str, command_args: Vec<String>) -> Self {
         Self {
-            name: command_name.into(),
+            name: command_name.to_string(),
             args: command_args,
             ..Default::default()
         }
@@ -134,20 +132,20 @@ pub struct WhileClause {
 
 #[derive(Clone, Debug)]
 pub struct ForClause {
-    pub name: RString,
-    pub words: Vec<RString>,
+    pub name: String,
+    pub words: Vec<String>,
     pub body: Program,
 }
 
 #[derive(Clone, Debug)]
 pub struct CaseClause {
-    pub word: RString,
+    pub word: String,
     pub arms: Vec<CaseArm>,
 }
 
 #[derive(Clone, Debug)]
 pub struct CaseArm {
-    pub patterns: Vec<RString>,
+    pub patterns: Vec<String>,
     pub body: Program,
 }
 

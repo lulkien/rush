@@ -111,7 +111,17 @@ impl VarStore {
         result
     }
 
-    /// Check if a variable is set.
+    /// Build an environment array for execve (KEY=VALUE format).
+    pub fn build_env_array(&self) -> Vec<std::ffi::CString> {
+        self.0
+            .iter()
+            .filter(|entry| entry.key() != "?") // skip $? (internal)
+            .map(|entry| {
+                let pair = format!("{}={}", entry.key(), entry.value().join(":"));
+                std::ffi::CString::new(pair).unwrap_or_default()
+            })
+            .collect()
+    }
     #[allow(unused)]
     pub fn contains(&self, name: &str) -> bool {
         self.0.contains_key(name)

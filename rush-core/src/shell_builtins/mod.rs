@@ -1,6 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
-use abi_stable::std_types::{RString, RVec};
+
 use anyhow::anyhow;
 use dashmap::{DashMap, try_result::TryResult};
 use log::warn;
@@ -12,11 +12,11 @@ mod history_search;
 
 #[allow(unused)]
 pub trait BuiltinCommand: Send + Sync {
-    fn plugin_name(&self) -> RString;
+    fn plugin_name(&self) -> String;
     fn print_desc(&self);
     fn print_help(&self);
     fn print_version(&self);
-    fn execute(&self, args: RVec<RString>) -> CommandResult;
+    fn execute(&self, args: Vec<String>) -> CommandResult;
 }
 
 type RegistryTypeRaw = Box<dyn BuiltinCommand>;

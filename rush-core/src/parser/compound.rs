@@ -1,6 +1,6 @@
 //! Compound commands: subshell, brace group, if, while, for, case.
 
-use abi_stable::std_types::RString;
+
 
 use crate::lexer::token::Token;
 use crate::types::*;
@@ -128,7 +128,7 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_for_clause(&mut self) -> anyhow::Result<Command> {
         self.expect_reserved("for")?;
-        let name = RString::from(self.expect_ident()?.as_str());
+        let name = String::from(self.expect_ident()?.as_str());
 
         // Optional `in words...`
         let words = if self.peek_is_reserved() {
@@ -144,7 +144,7 @@ impl<'a> Parser<'a> {
                                 if s == "do" {
                                     break;
                                 }
-                                w.push(RString::from(s.as_str()));
+                                w.push(String::from(s.as_str()));
                                 self.advance();
                             }
                             _ => break,
@@ -177,7 +177,7 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_case_clause(&mut self) -> anyhow::Result<Command> {
         self.expect_reserved("case")?;
-        let word = RString::from(self.expect_ident()?.as_str());
+        let word = String::from(self.expect_ident()?.as_str());
         self.expect_reserved("in")?;
         self.skip_separators();
 
@@ -200,7 +200,7 @@ impl<'a> Parser<'a> {
             }
             loop {
                 let pat = self.expect_ident()?;
-                patterns.push(RString::from(pat.as_str()));
+                patterns.push(String::from(pat.as_str()));
                 match self.peek() {
                     Some(Token::Pipe) => {
                         self.advance();

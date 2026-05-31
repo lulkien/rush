@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use abi_stable::std_types::RString;
+
 use logos::Logos;
 
 // ── quote kind ───────────────────────────────────────────────────────
@@ -189,11 +189,11 @@ impl Display for Token {
     }
 }
 
-impl From<Token> for RString {
+impl From<Token> for String {
     fn from(val: Token) -> Self {
         match val {
-            Token::Word(ident, _) => ident.into(),
-            _ => RString::new(),
+            Token::Word(ident, _) => ident.to_string(),
+            _ => String::new(),
         }
     }
 }

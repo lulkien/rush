@@ -1,6 +1,6 @@
 //! Core grammar: program, complete_command, and_or, pipeline, command, simple_command.
 
-use abi_stable::std_types::{RString, RVec};
+
 
 use crate::lexer::token::Token;
 use crate::types::*;
@@ -125,8 +125,8 @@ impl<'a> Parser<'a> {
     // ── grammar: simple_command ──────────────────────────────────────
 
     pub(crate) fn parse_simple_command(&mut self) -> anyhow::Result<Command> {
-        let mut name: Option<RString> = None;
-        let mut args = RVec::new();
+        let mut name: Option<String> = None;
+        let mut args = Vec::new();
         let mut redirects: Vec<Redirect> = Vec::new();
         let mut pending_op: Option<RedirectOp> = None;
 
@@ -162,10 +162,10 @@ impl<'a> Parser<'a> {
                     self.advance();
                     // Single-quoted words get a \x01 prefix so the
                     // expansion pass can skip them.
-                    let value: RString = if quote == crate::lexer::token::QuoteKind::SingleQuoted {
-                        format!("\x01{word}").into()
+                    let value: String = if quote == crate::lexer::token::QuoteKind::SingleQuoted {
+                        format!("\x01{word}").to_string()
                     } else {
-                        word.into()
+                        word.to_string()
                     };
                     if let Some(op) = pending_op.take() {
                         redirects.push(Redirect {

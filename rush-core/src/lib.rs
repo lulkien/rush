@@ -38,16 +38,16 @@ fn expand_pipeline(pipeline: &mut types::Pipeline, vars: &VarStore) {
 fn expand_command(cmd: &mut types::Command, vars: &VarStore) {
     let expanded_name = vars.expand_string(&cmd.name);
     if expanded_name != *cmd.name {
-        cmd.name = expanded_name.into();
+        cmd.name = expanded_name.to_string();
     }
     for arg in cmd.args.iter_mut() {
         if arg.starts_with('\x01') {
-            *arg = arg[1..].into();
+            *arg = arg[1..].to_string();
             continue;
         }
         let expanded = vars.expand_string(arg);
         if expanded != **arg {
-            *arg = expanded.into();
+            *arg = expanded.to_string();
         }
     }
 }
@@ -108,7 +108,7 @@ fn preprocess_pipeline(pipeline: &mut types::Pipeline, vars: &var::VarStore) {
         if let Some((var_name, var_value)) = split_assignment(&cmd.name) {
             vars.set_colon(&var_name, &var_value);
             if cmd.args.is_empty() {
-                cmd.name = "true".into();
+                cmd.name = "true".to_string();
             } else {
                 let new_name = cmd.args[0].clone();
                 cmd.name = new_name;
@@ -142,9 +142,9 @@ pub fn init_runtime() -> anyhow::Result<(user::UserDirectoryRegistry, Executor, 
 
     let user_dirs = user::init_module()?;
     let env = env::init_module(&user_dirs)?;
+    let vars = var::VarStore::default();
     let executor =
         executor::init_module(shell_builtins::init_module()?, plugin::init_module(&env)?)?;
-    let vars = var::VarStore::default();
 
     for (key, value) in std::env::vars() {
         vars.set_colon(&key, &value);
