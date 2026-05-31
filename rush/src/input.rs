@@ -147,10 +147,9 @@ impl InputHandler {
         for i in (0..h.len()).rev() {
             if let Ok(Some(result)) =
                 h.get(i, rustyline::history::SearchDirection::Forward)
+                && seen.insert(result.entry.to_string())
             {
-                if seen.insert(result.entry.to_string()) {
-                    history.push(result.entry.to_string());
-                }
+                history.push(result.entry.to_string());
             }
         }
 
