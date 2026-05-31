@@ -10,7 +10,6 @@ use crate::executor::Executor;
 use crate::var::VarStore;
 pub use rush_interface::CommandResult;
 
-pub mod env;
 pub mod executor;
 pub mod lexer;
 pub mod parser;
@@ -148,10 +147,25 @@ pub fn init_runtime() -> anyhow::Result<(user::UserDirectoryRegistry, Executor, 
     Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let user_dirs = user::init_module()?;
-    let env = env::init_module(&user_dirs)?;
     let vars = Rc::new(var::VarStore::default());
+
+    // Set RUSH_*_PATH variables for plugin discovery.
+    const SYSTEM_LOCAL_DATA_PATH: &str = "/usr/local/share/rush";
+    const SYSTEM_DATA_PATH: &str = "/usr/share/rush";
+    const SYSTEM_CONFIG_PATH: &str = "/etc/rush";
+    vars.set("RUSH_DATA_PATH", vec![
+        user_dirs.get_data_dir(),
+        SYSTEM_LOCAL_DATA_PATH.to_string(),
+        SYSTEM_DATA_PATH.to_string(),
+    ]);
+    vars.set("RUSH_CONFIG_PATH", vec![
+        user_dirs.get_config_dir(),
+        SYSTEM_CONFIG_PATH.to_string(),
+    ]);
+    vars.set("RUSH_CACHE_PATH", vec![user_dirs.get_cache_dir()]);
+
     let executor =
-        executor::init_module(shell_builtins::init_module()?, plugin::init_module(&env)?, Rc::clone(&vars))?;
+        executor::init_module(shell_builtins::init_module()?, plugin::init_module(&vars)?, Rc::clone(&vars))?;
 
     for (key, value) in std::env::vars() {
         vars.set_colon(&key, &value);

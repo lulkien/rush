@@ -6,7 +6,7 @@ use rush_interface::CommandResult;
 
 pub use crate::plugin::metadata::PluginMetadata;
 use crate::{
-    env::EnvRegistry,
+    var::VarStore,
     types::{Command, DashRegistry},
 };
 
@@ -83,10 +83,10 @@ impl PluginRegistry {
     }
 }
 
-pub fn init_module(env: &EnvRegistry) -> anyhow::Result<PluginRegistry> {
+pub fn init_module(vars: &VarStore) -> anyhow::Result<PluginRegistry> {
     let mut plugin_registry = PluginRegistry::default();
 
-    lazy::discover(&mut plugin_registry, env)?;
+    lazy::discover(&mut plugin_registry, vars)?;
 
     Ok(plugin_registry)
 }

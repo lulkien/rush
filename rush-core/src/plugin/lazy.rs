@@ -12,7 +12,7 @@ use log::{debug, info};
 use rush_interface::CommandRef;
 
 use crate::{
-    env::EnvRegistry,
+    var::VarStore,
     plugin::{PluginMetadata, PluginRegistry},
     types::DashRegistry,
 };
@@ -20,7 +20,6 @@ use crate::{
 pub(super) fn load_plugin<P: AsRef<Path>>(plugin_path: P) -> Option<Rc<CommandRef>> {
     let path = plugin_path.as_ref();
 
-    // Load lib header
     let lib = abi_stable::library::lib_header_from_path(path).ok()?;
 
     let module = lib.init_root_module::<CommandRef>().ok()?;
@@ -32,21 +31,19 @@ pub(super) fn load_plugin<P: AsRef<Path>>(plugin_path: P) -> Option<Rc<CommandRe
     Some(Rc::new(module))
 }
 
-pub(super) fn discover(plugin: &mut PluginRegistry, env: &EnvRegistry) -> anyhow::Result<()> {
+pub(super) fn discover(plugin: &mut PluginRegistry, vars: &VarStore) -> anyhow::Result<()> {
     let mut registered_count = 0;
 
-    env.get_variable("RUSH_DATA_PATH")?.iter().for_each(|path| {
+    for path in &vars.get("RUSH_DATA_PATH") {
         registered_count +=
             discover_from_path(plugin, PathBuf::from_str(path).unwrap().join("plugins"))
                 .unwrap_or_default();
-    });
+    }
 
-    env.get_variable("RUSH_PLUGIN_PATH")?
-        .iter()
-        .for_each(|path| {
-            registered_count +=
-                discover_from_path(plugin, PathBuf::from_str(path).unwrap()).unwrap_or_default();
-        });
+    for path in &vars.get("RUSH_PLUGIN_PATH") {
+        registered_count +=
+            discover_from_path(plugin, PathBuf::from_str(path).unwrap()).unwrap_or_default();
+    }
 
     info!("Registered {} plugin(s)", registered_count);
 

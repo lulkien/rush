@@ -4,10 +4,12 @@ use rush_core::types::{Command, CommandPipe, CommandPipeList};
 
 fn setup() -> Executor {
     let user_dirs = rush_core::user::init_module().unwrap();
-    let env = rush_core::env::init_module(&user_dirs).unwrap();
-    let builtins = rush_core::shell_builtins::init_module().unwrap();
-    let plugins = rush_core::plugin::init_module(&env).unwrap();
     let vars = std::rc::Rc::new(rush_core::var::VarStore::default());
+    // Plugin discovery needs RUSH_DATA_PATH.
+    vars.set("RUSH_DATA_PATH", vec![user_dirs.get_data_dir()]);
+    vars.set("RUSH_PLUGIN_PATH", Vec::new());
+    let builtins = rush_core::shell_builtins::init_module().unwrap();
+    let plugins = rush_core::plugin::init_module(&vars).unwrap();
     Executor::new(builtins, plugins, vars)
 }
 
