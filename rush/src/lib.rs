@@ -4,7 +4,7 @@ use env_logger::{Builder, Env};
 use log::{debug, error};
 use rustyline::error::ReadlineError;
 
-use crate::{executor::Executor, input::InputHandler, var::VarStore};
+use crate::{executor::Executor, input::InputHandler, var::VarStore, types::AndOrList};
 
 pub use rush_interface::ExecResult;
 
@@ -19,22 +19,11 @@ pub mod types;
 pub mod user;
 pub mod var;
 
-/// Expand `$VAR` references in command words and handle assignments.
-fn expand_and_assign(program: &mut types::Program, vars: &VarStore, last_exit: u8) {
-    // Track the last exit code for $? expansion.
-    // We can't easily propagate this in a pre-pass since it depends on
-    // execution order, so we use the passed-in value for the single-command
-    // case (REPL) and default to 0 for scripts.
-    let _ = last_exit;
-
-    for item in &mut program.items {
-        let list = &mut item.list;
-        // Expand in first pipeline
-        expand_pipeline(&mut list.first, vars);
-        // Expand in rest
-        for (_, pipeline) in &mut list.rest {
-            expand_pipeline(pipeline, vars);
-        }
+/// Expand `$VAR` references in a complete command.
+fn expand_complete_command(item: &mut types::CompleteCommand, vars: &VarStore) {
+    expand_pipeline(&mut item.list.first, vars);
+    for (_, pipeline) in &mut item.list.rest {
+        expand_pipeline(pipeline, vars);
     }
 }
 
@@ -46,21 +35,18 @@ fn expand_pipeline(pipeline: &mut types::Pipeline, vars: &VarStore) {
 
 fn expand_command(cmd: &mut types::Command, vars: &VarStore) {
     // Expand $VAR in the command name (always unquoted at the grammar level).
-    let expanded_name = vars.expand_string(&cmd.name, 0);
+    let expanded_name = vars.expand_string(&cmd.name);
     if expanded_name != *cmd.name {
         cmd.name = expanded_name.into();
     }
     // Expand $VAR in args — but NOT inside single-quoted words.
     for arg in cmd.args.iter_mut() {
         // Single-quoted args: no expansion, leave literal.
-        // (The expansion pass only runs on unquoted and double-quoted words;
-        //  single-quoted content is stored as-is with a marker.)
         if arg.starts_with('\x01') {
-            // Internal marker for single-quoted content.
             *arg = arg[1..].into();
             continue;
         }
-        let expanded = vars.expand_string(arg, 0);
+        let expanded = vars.expand_string(arg);
         if expanded != **arg {
             *arg = expanded.into();
         }
@@ -77,13 +63,38 @@ pub fn execute_string(
     let tokens = lexer.tokenize();
     let mut program = parser::parse(&tokens)?;
 
-    // Pre-pass: handle assignments and expand variables.
+    // Pre-pass: handle assignments.
     preprocess(&mut program, vars);
 
-    // Expand $VAR references across the program.
-    expand_and_assign(&mut program, vars, 0);
+    // Execute commands one at a time, expanding $? between them.
+    let mut last_result = ExecResult::default();
+    for item in &mut program.items {
+        // Expand $VAR references in this command (with current $?).
+        expand_complete_command(item, vars);
 
-    Ok(executor.execute_program(&program))
+        let list = std::mem::replace(&mut item.list, AndOrList {
+            first: types::Pipeline { negation: false, commands: vec![] },
+            rest: vec![],
+        });
+
+        // Execute the and-or list.
+        last_result = executor.execute_pipeline(&list.first);
+        vars.set_exit_code(last_result.code);
+
+        for (op, pipeline) in &list.rest {
+            let success = last_result.code == 0;
+            let should_run = match op {
+                crate::types::AndOr::And => success,
+                crate::types::AndOr::Or => !success,
+            };
+            if should_run {
+                last_result = executor.execute_pipeline(pipeline);
+                vars.set_exit_code(last_result.code);
+            }
+        }
+    }
+
+    Ok(last_result)
 }
 
 /// Pre-process: extract assignments from the AST.
@@ -200,8 +211,6 @@ fn enter_repl(
 ) -> anyhow::Result<()> {
     input_handler.load_history(history_file)?;
 
-    let mut _last_exit: u8 = 0;
-
     loop {
         let prompt = executor
             .execute_command(types::Command::new("rush-prompt"))
@@ -219,7 +228,9 @@ fn enter_repl(
                         println!("{selected}");
                         input_handler.add_history(&selected)?;
                         match execute_string(executor, vars, &selected) {
-                            Ok(result) => _last_exit = result.code,
+                            Ok(result) => {
+                                let _ = result;
+                            }
                             Err(e) => eprintln!("rush: {e}"),
                         }
                     }
@@ -229,13 +240,14 @@ fn enter_repl(
                 input_handler.add_history(&line)?;
 
                 match execute_string(executor, vars, &line) {
-                    Ok(result) => _last_exit = result.code,
+                    Ok(result) => {
+                        let _ = result;
+                    }
                     Err(e) => eprintln!("rush: {e}"),
                 }
             }
             Err(ReadlineError::Interrupted) => {
                 eprintln!("^C");
-                _last_exit = 130;
             }
             Err(ReadlineError::Eof) => {
                 break;

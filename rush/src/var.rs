@@ -3,6 +3,7 @@
 //! - `VAR=value` stores `["value"]`
 //! - `PATH=/a:/b` stores `["/a", "/b"]`
 //! - Expansion joins parts with `:` to produce the expanded string.
+//! - `$?` reads from the special `?` key (updated via `set_exit_code`).
 
 use dashmap::DashMap;
 
@@ -34,6 +35,11 @@ impl VarStore {
         self.0.remove(name)
     }
 
+    /// Update the `$?` exit code.
+    pub fn set_exit_code(&self, code: u8) {
+        self.set("?", vec![code.to_string()]);
+    }
+
     /// Expand a variable: join all parts with `:`.
     /// Returns empty string if the variable is not set.
     pub fn expand(&self, name: &str) -> String {
@@ -46,8 +52,9 @@ impl VarStore {
     }
 
     /// Expand `$VAR` references in a string.
-    /// Supports: `$VAR`, `${VAR}`, `$?` (exit status placeholder), `$$` (pid).
-    pub fn expand_string(&self, input: &str, last_exit: u8) -> String {
+    /// Supports: `$VAR`, `${VAR}`, `$?` (exit status), `$$` (pid).
+    /// `$?` reads from the `?` variable (set via `set_exit_code`).
+    pub fn expand_string(&self, input: &str) -> String {
         let mut result = String::with_capacity(input.len());
         let mut chars = input.chars().peekable();
 
@@ -60,7 +67,7 @@ impl VarStore {
                     }
                     Some('?') => {
                         chars.next();
-                        result.push_str(&last_exit.to_string());
+                        result.push_str(&self.expand("?"));
                     }
                     Some('{') => {
                         chars.next(); // consume '{'
@@ -105,6 +112,7 @@ impl VarStore {
     }
 
     /// Check if a variable is set.
+    #[allow(unused)]
     pub fn contains(&self, name: &str) -> bool {
         self.0.contains_key(name)
     }

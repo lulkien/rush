@@ -69,7 +69,7 @@ impl Executor {
         last_result
     }
 
-    fn execute_pipeline(&self, pipeline: &crate::types::Pipeline) -> ExecResult {
+    pub(crate) fn execute_pipeline(&self, pipeline: &crate::types::Pipeline) -> ExecResult {
         let commands: Vec<&Command> = pipeline.commands.iter().collect();
 
         if commands.is_empty() {
