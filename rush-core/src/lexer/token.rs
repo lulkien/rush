@@ -1,6 +1,5 @@
 use std::fmt::Display;
 
-
 use logos::Logos;
 
 // ── quote kind ───────────────────────────────────────────────────────
@@ -27,24 +26,40 @@ enum InnerToken {
     DoubleQuotedText(String),
 
     // ── multi-char operators (longest match wins) ──
-    #[token("<<-")] DLessDash,
-    #[token(">>")]  DGreat,
-    #[token("<<")]  DLess,
-    #[token("<>")]  LessGreat,
-    #[token("<&")]  LessAnd,
-    #[token(">&")]  GreatAnd,
-    #[token(">|")]  Clobber,
-    #[token("&&")]  AndIf,
-    #[token("||")]  OrIf,
+    #[token("<<-")]
+    DLessDash,
+    #[token(">>")]
+    DGreat,
+    #[token("<<")]
+    DLess,
+    #[token("<>")]
+    LessGreat,
+    #[token("<&")]
+    LessAnd,
+    #[token(">&")]
+    GreatAnd,
+    #[token(">|")]
+    Clobber,
+    #[token("&&")]
+    AndIf,
+    #[token("||")]
+    OrIf,
 
     // ── single-char operators ──
-    #[token("|")]  Pipe,
-    #[token(";")]  Semicolon,
-    #[token("&")]  Background,
-    #[token("<")]  Less,
-    #[token(">")]  Great,
-    #[token("(")]  OpenParen,
-    #[token(")")]  CloseParen,
+    #[token("|")]
+    Pipe,
+    #[token(";")]
+    Semicolon,
+    #[token("&")]
+    Background,
+    #[token("<")]
+    Less,
+    #[token(">")]
+    Great,
+    #[token("(")]
+    OpenParen,
+    #[token(")")]
+    CloseParen,
 
     // ── line continuation: `\<newline>` → skip ──
     #[regex(r"\\\n", logos::skip)]
@@ -127,29 +142,29 @@ fn unescaped_word(lex: &logos::Lexer<InnerToken>) -> String {
 pub enum Token {
     /// A shell word with its quoting context.
     Word(String, QuoteKind),
-    Pipe,         // |
-    Semicolon,    // ;
+    Pipe,      // |
+    Semicolon, // ;
     Eof,
     // Logical operators
-    AndIf,        // &&
-    OrIf,         // ||
+    AndIf, // &&
+    OrIf,  // ||
     // Background
-    Background,   // &
+    Background, // &
     // Redirections
-    Less,         // <
-    Great,        // >
-    DGreat,       // >>
-    LessAnd,      // <&
-    GreatAnd,     // >&
-    LessGreat,    // <>
-    DLess,        // <<
-    DLessDash,    // <<-
-    Clobber,      // >|
+    Less,      // <
+    Great,     // >
+    DGreat,    // >>
+    LessAnd,   // <&
+    GreatAnd,  // >&
+    LessGreat, // <>
+    DLess,     // <<
+    DLessDash, // <<-
+    Clobber,   // >|
     // Grouping
-    OpenParen,    // (
-    CloseParen,   // )
+    OpenParen,  // (
+    CloseParen, // )
     // Line separator
-    Newline,      // \n
+    Newline, // \n
 }
 
 impl Token {
@@ -205,12 +220,8 @@ impl From<Token> for String {
 pub(super) fn tokenize_with_logos(input: &str) -> Vec<Token> {
     let mut tokens: Vec<Token> = InnerToken::lexer(input)
         .filter_map(|t| match t {
-            Ok(InnerToken::SingleQuotedText(s)) => {
-                Some(Token::Word(s, QuoteKind::SingleQuoted))
-            }
-            Ok(InnerToken::DoubleQuotedText(s)) => {
-                Some(Token::Word(s, QuoteKind::DoubleQuoted))
-            }
+            Ok(InnerToken::SingleQuotedText(s)) => Some(Token::Word(s, QuoteKind::SingleQuoted)),
+            Ok(InnerToken::DoubleQuotedText(s)) => Some(Token::Word(s, QuoteKind::DoubleQuoted)),
             Ok(InnerToken::UnquotedWord(s)) => Some(Token::Word(s, QuoteKind::Unquoted)),
             Ok(InnerToken::Pipe) => Some(Token::Pipe),
             Ok(InnerToken::Semicolon) => Some(Token::Semicolon),

@@ -12,9 +12,9 @@ fn setup() -> Executor {
 
 /// Run a pipe list and capture what gets written to stdout.
 fn capture_stdout(executor: &Executor, pipe_list: CommandPipeList) -> String {
-    use std::io::Read;
-    use std::os::fd::{FromRawFd, OwnedFd, BorrowedFd};
     use nix::unistd;
+    use std::io::Read;
+    use std::os::fd::{BorrowedFd, FromRawFd, OwnedFd};
 
     fn raw_fd(fd: std::os::fd::RawFd) -> BorrowedFd<'static> {
         unsafe { BorrowedFd::borrow_raw(fd) }

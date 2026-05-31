@@ -5,7 +5,10 @@ use dashmap::{DashMap, try_result::TryResult};
 use rush_interface::CommandResult;
 
 pub use crate::plugin::metadata::PluginMetadata;
-use crate::{env::EnvRegistry, types::{Command, DashRegistry}};
+use crate::{
+    env::EnvRegistry,
+    types::{Command, DashRegistry},
+};
 
 mod lazy;
 
@@ -69,12 +72,7 @@ impl PluginRegistry {
         let ffi_args: abi_stable::std_types::RVec<abi_stable::std_types::RString> =
             command.args.iter().map(|s| s.as_str().into()).collect();
 
-        match plugin_metadata
-            .as_ref()
-            .borrow()
-            .plugin
-            .as_ref()
-        {
+        match plugin_metadata.as_ref().borrow().plugin.as_ref() {
             Some(module) => module.execute()(ffi_args),
             None => CommandResult::new(1, "plugin unloaded unexpectedly"),
         }

@@ -1,7 +1,5 @@
 //! Compound commands: subshell, brace group, if, while, for, case.
 
-
-
 use crate::lexer::token::Token;
 use crate::types::*;
 
@@ -138,9 +136,7 @@ impl<'a> Parser<'a> {
                     let mut w = Vec::new();
                     loop {
                         match self.peek() {
-                            Some(Token::Word(s, _))
-                                if !Self::is_reserved(s) || s == "do" =>
-                            {
+                            Some(Token::Word(s, _)) if !Self::is_reserved(s) || s == "do" => {
                                 if s == "do" {
                                     break;
                                 }
@@ -164,11 +160,7 @@ impl<'a> Parser<'a> {
         self.expect_reserved("done")?;
 
         Ok(Command {
-            kind: CommandKind::For(ForClause {
-                name,
-                words,
-                body,
-            }),
+            kind: CommandKind::For(ForClause { name, words, body }),
             ..Default::default()
         })
     }
@@ -226,8 +218,13 @@ impl<'a> Parser<'a> {
                 }
                 if self.peek_is_reserved()
                     && let Some(Token::Word(s, _)) = self.peek()
-                    && (s == "esac" || s == "fi" || s == "done" || s == "elif"
-                        || s == "else" || s == "then" || s == "do")
+                    && (s == "esac"
+                        || s == "fi"
+                        || s == "done"
+                        || s == "elif"
+                        || s == "else"
+                        || s == "then"
+                        || s == "do")
                 {
                     break;
                 }

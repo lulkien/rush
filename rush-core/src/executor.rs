@@ -7,8 +7,8 @@ use dashmap::DashMap;
 use nix::{
     fcntl::{FcntlArg, FdFlag, fcntl},
     sys::{
-        signal::{Signal, SigHandler, sigaction, SaFlags, SigAction, SigSet},
-        wait::{waitpid, WaitStatus},
+        signal::{SaFlags, SigAction, SigHandler, SigSet, Signal, sigaction},
+        wait::{WaitStatus, waitpid},
     },
     unistd::{ForkResult, Pid, fork, pipe, write},
 };
@@ -88,9 +88,7 @@ impl Executor {
                         result
                     }
                     _ => {
-                        eprintln!(
-                            "rush: compound commands not yet implemented in executor"
-                        );
+                        eprintln!("rush: compound commands not yet implemented in executor");
                         CommandResult::new(1, "")
                     }
                 }
@@ -170,9 +168,7 @@ impl Executor {
             }
             Ok(ForkResult::Parent { child }) => match waitpid(child, None) {
                 Ok(WaitStatus::Exited(_, code)) => CommandResult::new(code, ""),
-                Ok(WaitStatus::Signaled(_, sig, _)) => {
-                    CommandResult::new(128 + sig as i32, "")
-                }
+                Ok(WaitStatus::Signaled(_, sig, _)) => CommandResult::new(128 + sig as i32, ""),
                 _ => CommandResult::new(1, ""),
             },
             Err(e) => CommandResult::new(1, &format!("fork() failed: {e}")),
@@ -241,10 +237,7 @@ impl Executor {
                     drop(pipes);
 
                     // External commands: exec directly (no fork inside fork).
-                    if matches!(
-                        self.resolve(&commands[i].name),
-                        ExecutionFrom::External(_)
-                    ) {
+                    if matches!(self.resolve(&commands[i].name), ExecutionFrom::External(_)) {
                         self.exec_external(&commands[i]);
                     }
 

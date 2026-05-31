@@ -1,5 +1,10 @@
 use std::{
-    cell::RefCell, fs::{self, File}, io::Read, path::{Path, PathBuf}, rc::Rc, str::FromStr
+    cell::RefCell,
+    fs::{self, File},
+    io::Read,
+    path::{Path, PathBuf},
+    rc::Rc,
+    str::FromStr,
 };
 
 use anyhow::{Context, ensure};

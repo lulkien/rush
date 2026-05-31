@@ -4,10 +4,7 @@ use env_logger::{Builder, Env};
 use log::{debug, error};
 use rustyline::error::ReadlineError;
 
-use rush_core::{
-    execute_string, init_runtime,
-    types,
-};
+use rush_core::{execute_string, init_runtime, types};
 
 mod input;
 

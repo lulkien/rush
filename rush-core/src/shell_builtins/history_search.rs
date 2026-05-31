@@ -1,6 +1,5 @@
 //! Builtin `history-search` — interactive fuzzy history search via skim TUI.
 
-
 use rush_interface::CommandResult;
 
 use super::BuiltinCommand;

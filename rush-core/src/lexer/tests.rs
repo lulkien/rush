@@ -129,7 +129,9 @@ fn posix_and_or() {
     let tokens = token_strings(&lexer);
     assert_eq!(
         tokens,
-        vec!["gcc", "-c", "foo.c", "&&", "gcc", "-c", "bar.c", "||", "echo", "failed"]
+        vec![
+            "gcc", "-c", "foo.c", "&&", "gcc", "-c", "bar.c", "||", "echo", "failed"
+        ]
     );
 }
 
@@ -140,8 +142,8 @@ fn posix_redirects_comprehensive() {
     assert_eq!(
         tokens,
         vec![
-            "cmd", "<", "in", ">", "out", "2", ">", "err", ">>", "log",
-            "<>", "both", "<&", "0", ">&", "1", ">|", "forced",
+            "cmd", "<", "in", ">", "out", "2", ">", "err", ">>", "log", "<>", "both", "<&", "0",
+            ">&", "1", ">|", "forced",
         ]
     );
 }

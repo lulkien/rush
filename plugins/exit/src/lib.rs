@@ -56,10 +56,7 @@ pub fn execute(args: RVec<RString>) -> CommandResult {
 
         _ => CommandResult::new(
             2,
-            &format!(
-                "exit: expected [0-1] argument, found {}",
-                args.len()
-            ),
+            &format!("exit: expected [0-1] argument, found {}", args.len()),
         ),
     }
 }

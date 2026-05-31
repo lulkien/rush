@@ -108,10 +108,22 @@ impl<'a> Parser<'a> {
     pub(crate) fn is_reserved(s: &str) -> bool {
         matches!(
             s,
-            "if" | "then" | "else" | "elif" | "fi"
-                | "for" | "while" | "until" | "do" | "done"
-                | "case" | "esac" | "in"
-                | "{" | "}" | "!" | "function"
+            "if" | "then"
+                | "else"
+                | "elif"
+                | "fi"
+                | "for"
+                | "while"
+                | "until"
+                | "do"
+                | "done"
+                | "case"
+                | "esac"
+                | "in"
+                | "{"
+                | "}"
+                | "!"
+                | "function"
         )
     }
 

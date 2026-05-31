@@ -1,6 +1,6 @@
 use clap::Parser;
-use rush_core::{execute_string, init_runtime};
 use rush::run_script;
+use rush_core::{execute_string, init_runtime};
 
 /// Rush — a POSIX-compatible shell written in Rust.
 #[derive(Parser)]

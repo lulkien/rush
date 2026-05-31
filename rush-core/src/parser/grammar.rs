@@ -1,7 +1,5 @@
 //! Core grammar: program, complete_command, and_or, pipeline, command, simple_command.
 
-
-
 use crate::lexer::token::Token;
 use crate::types::*;
 
@@ -168,10 +166,7 @@ impl<'a> Parser<'a> {
                         word.to_string()
                     };
                     if let Some(op) = pending_op.take() {
-                        redirects.push(Redirect {
-                            op,
-                            target: value,
-                        });
+                        redirects.push(Redirect { op, target: value });
                     } else if name.is_none() {
                         name = Some(value);
                     } else {

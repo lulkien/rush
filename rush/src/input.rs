@@ -2,15 +2,12 @@ use std::cell::RefCell;
 use std::path::Path;
 
 use rustyline::{
-    Editor,
+    Cmd, Context, Editor, Event, Helper, KeyCode, KeyEvent, Modifiers, Movement, Word,
     completion::{Completer, FilenameCompleter},
     error::ReadlineError,
-    hint::{Hinter, HistoryHinter},
     highlight::Highlighter,
+    hint::{Hinter, HistoryHinter},
     validate::Validator,
-    Helper, Context,
-    Event, KeyEvent, KeyCode, Modifiers,
-    Cmd, Movement, Word,
 };
 
 /// Bundles all rustyline extension traits for our shell.
@@ -91,8 +88,7 @@ impl Completer for InputHelper {
 /// True if the cursor is at the first whitespace-delimited word.
 fn is_first_word(line: &str, pos: usize) -> bool {
     let before = &line[..pos];
-    !before.contains(|c: char| c.is_whitespace() && c != ' ')
-        || before.trim_start().is_empty()
+    !before.contains(|c: char| c.is_whitespace() && c != ' ') || before.trim_start().is_empty()
 }
 
 /// Scan PATH once and return all executable names.
@@ -223,8 +219,7 @@ impl InputHandler {
         let mut seen = std::collections::HashSet::new();
         let mut history: Vec<String> = Vec::new();
         for i in (0..h.len()).rev() {
-            if let Ok(Some(result)) =
-                h.get(i, rustyline::history::SearchDirection::Forward)
+            if let Ok(Some(result)) = h.get(i, rustyline::history::SearchDirection::Forward)
                 && seen.insert(result.entry.to_string())
             {
                 history.push(result.entry.to_string());
@@ -251,16 +246,16 @@ impl InputHandler {
         }
         let items: Vec<std::sync::Arc<dyn SkimItem>> = history
             .into_iter()
-            .map(|s| -> std::sync::Arc<dyn SkimItem> {
-                std::sync::Arc::new(HistoryItem(s))
-            })
+            .map(|s| -> std::sync::Arc<dyn SkimItem> { std::sync::Arc::new(HistoryItem(s)) })
             .collect();
         let _ = tx.send(items);
         drop(tx);
 
-        Skim::run_with(options, Some(rx))
-            .ok()
-            .and_then(|out| out.selected_items.first().map(|item| item.output().to_string()))
+        Skim::run_with(options, Some(rx)).ok().and_then(|out| {
+            out.selected_items
+                .first()
+                .map(|item| item.output().to_string())
+        })
     }
 
     pub fn save_history<P: AsRef<Path>>(&mut self, path: P) -> anyhow::Result<()> {

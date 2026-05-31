@@ -1,6 +1,5 @@
 use std::{cell::RefCell, rc::Rc};
 
-
 use anyhow::anyhow;
 use dashmap::{DashMap, try_result::TryResult};
 use log::warn;
@@ -53,10 +52,7 @@ impl DashRegistry<RegistryTypeRaw> for BuiltinsRegistry {
 impl BuiltinsRegistry {
     pub fn execute(&self, command: Command) -> CommandResult {
         match self.get(&command.name) {
-            Ok(command_entry) => command_entry
-                .as_ref()
-                .borrow()
-                .execute(command.args),
+            Ok(command_entry) => command_entry.as_ref().borrow().execute(command.args),
             Err(e) => CommandResult::new(1, format!("{e}").as_str()),
         }
     }

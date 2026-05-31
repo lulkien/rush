@@ -68,10 +68,16 @@ pub fn execute_string(
     for item in &mut program.items {
         expand_complete_command(item, vars);
 
-        let list = std::mem::replace(&mut item.list, AndOrList {
-            first: Pipeline { negation: false, commands: vec![] },
-            rest: vec![],
-        });
+        let list = std::mem::replace(
+            &mut item.list,
+            AndOrList {
+                first: Pipeline {
+                    negation: false,
+                    commands: vec![],
+                },
+                rest: vec![],
+            },
+        );
 
         last_result = executor.execute_pipeline(&list.first);
         vars.set_exit_code(last_result.code);
