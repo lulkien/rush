@@ -82,7 +82,15 @@ impl Hinter for InputHelper {
     }
 }
 
-impl Highlighter for InputHelper {}
+impl Highlighter for InputHelper {
+    fn highlight_hint<'h>(&self, hint: &'h str) -> std::borrow::Cow<'h, str> {
+        if hint.is_empty() {
+            return std::borrow::Cow::Borrowed("");
+        }
+        // ANSI faint (dim) + bright black for ghost text.
+        std::borrow::Cow::Owned(format!("\x1b[2m\x1b[90m{}\x1b[0m", hint))
+    }
+}
 
 impl Validator for InputHelper {}
 
