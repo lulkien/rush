@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::path::Path;
 
 use rustyline::{
@@ -14,6 +15,8 @@ use rustyline::{
 struct InputHelper {
     hinter: HistoryHinter,
     commands: Vec<String>,
+    /// Lazily-populated cache of PATH executables.
+    path_commands: RefCell<Option<Vec<String>>>,
 }
 
 impl InputHelper {
@@ -21,6 +24,7 @@ impl InputHelper {
         Self {
             hinter: HistoryHinter {},
             commands: Vec::new(),
+            path_commands: RefCell::new(None),
         }
     }
 
@@ -47,12 +51,29 @@ impl Completer for InputHelper {
             let word = &line[..pos];
             let start = word.rfind(|c: char| c.is_whitespace()).map_or(0, |i| i + 1);
             let prefix = &line[start..pos];
-            let matches: Vec<String> = self
+
+            let mut matches: Vec<String> = self
                 .commands
                 .iter()
                 .filter(|c| c.starts_with(prefix))
                 .cloned()
                 .collect();
+
+            // Lazily scan PATH for external executables (once).
+            let mut path_cache = self.path_commands.borrow_mut();
+            if path_cache.is_none() {
+                *path_cache = Some(scan_path_executables());
+            }
+            if let Some(ref path_cmds) = *path_cache {
+                for c in path_cmds {
+                    if c.starts_with(prefix) && !self.commands.contains(c) {
+                        matches.push(c.clone());
+                    }
+                }
+            }
+
+            matches.sort();
+            matches.dedup();
             if !matches.is_empty() {
                 return Ok((start, matches));
             }
@@ -70,6 +91,42 @@ fn is_first_word(line: &str, pos: usize) -> bool {
     let before = &line[..pos];
     !before.contains(|c: char| c.is_whitespace() && c != ' ')
         || before.trim_start().is_empty()
+}
+
+/// Scan PATH once and return all executable names.
+fn scan_path_executables() -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let Ok(path_var) = std::env::var("PATH") else {
+        return Vec::new();
+    };
+    for dir in path_var.split(':') {
+        if dir.is_empty() {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if seen.contains(&name) {
+                continue;
+            }
+            if is_executable(&entry.path()) {
+                seen.insert(name.clone());
+            }
+        }
+    }
+    let mut names: Vec<String> = seen.into_iter().collect();
+    names.sort();
+    names
+}
+
+/// Check whether a file is a regular file with at least one executable bit.
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
 }
 
 // ── other traits ─────────────────────────────────────────────────────
