@@ -3,41 +3,65 @@ use std::fmt::Display;
 use abi_stable::std_types::RString;
 use logos::Logos;
 
-/// Intermediate token from the logos lexer.
-/// Converted to the public `Token` enum in `Lexer::tokenize`.
+// ── logos inner token ────────────────────────────────────────────────
+
+/// Intermediate token produced by the logos lexer.
+/// Converted to the public `Token` enum by `tokenize_with_logos`.
 #[derive(Logos, Debug, PartialEq)]
 enum InnerToken {
-    /// Single-quoted string: `'...'` — everything inside is literal.
+    /// Single-quoted string — everything inside is literal.
     #[regex(r"'[^']*'", single_quoted)]
-    /// Double-quoted string: `"..."` — backslash escapes `"`, `\`, `n`, `t`.
-    #[regex(r#""([^"\\]|\\.)*""#, double_quoted)]
+    /// Double-quoted string — `\` escapes `"`, `\`, `$`, `` ` ``, `\n`.
+    #[regex(r#""([^"\\$`]|\\.)*""#, double_quoted)]
     Text(String),
 
-    #[token("|")]
-    Pipe,
+    // ── multi-char operators (longest match wins) ──
+    #[token("<<-")] DLessDash,
+    #[token(">>")]  DGreat,
+    #[token("<<")]  DLess,
+    #[token("<>")]  LessGreat,
+    #[token("<&")]  LessAnd,
+    #[token(">&")]  GreatAnd,
+    #[token(">|")]  Clobber,
+    #[token("&&")]  AndIf,
+    #[token("||")]  OrIf,
 
-    #[token(";")]
-    Semicolon,
+    // ── single-char operators ──
+    #[token("|")]  Pipe,
+    #[token(";")]  Semicolon,
+    #[token("&")]  Background,
+    #[token("<")]  Less,
+    #[token(">")]  Great,
+    #[token("(")]  OpenParen,
+    #[token(")")]  CloseParen,
 
-    /// Unquoted word: any non-whitespace, non-separator, non-quote run.
-    #[regex(r#"[^\s|;'"]+"#, |lex| lex.slice().to_string())]
-    Ident(String),
+    // ── line continuation: `\<newline>` → skip ──
+    #[regex(r"\\\n", logos::skip)]
+    LineCont,
 
-    /// Whitespace — never emitted; skipped by the callback.
-    #[regex(r"\s+", |_| logos::Skip)]
+    // ── newline (after LineCont so `\<newline>` is consumed first) ──
+    #[token("\n")]
+    Newline,
+
+    // ── unquoted word with backslash escapes ──
+    // POSIX: `\X` preserves literal X; `\<newline>` is line continuation (handled above).
+    #[regex(r#"([^\t\n |;&<>()'"\\]|\\[^\n])+"#, unescaped_word)]
+    Word(String),
+
+    // ── horizontal whitespace (tabs, spaces) ──
+    #[regex(r"[ \t]+", logos::skip)]
     Whitespace,
 }
 
-/// Strip outer single quotes.  `'hello'` → `hello`.
+// ── callbacks ────────────────────────────────────────────────────────
+
 fn single_quoted(lex: &logos::Lexer<InnerToken>) -> String {
     let s = lex.slice();
     s[1..s.len() - 1].to_string()
 }
 
-/// Strip outer double quotes and process `\"`, `\\`, `\n`, `\t`.
 fn double_quoted(lex: &logos::Lexer<InnerToken>) -> String {
     let s = lex.slice();
-    // Strip the outer double-quote characters.
     let inner = &s[1..s.len() - 1];
     unescape_dq(inner)
 }
@@ -48,10 +72,11 @@ fn unescape_dq(s: &str) -> String {
     while let Some(c) = chars.next() {
         if c == '\\' {
             match chars.next() {
-                Some('"') => result.push('"'),
-                Some('\\') => result.push('\\'),
+                Some(q @ '"') => result.push(q),
+                Some(bs @ '\\') => result.push(bs),
+                Some(d @ '$') => result.push(d),
+                Some(b @ '`') => result.push(b),
                 Some('n') => result.push('\n'),
-                Some('t') => result.push('\t'),
                 Some(other) => {
                     result.push('\\');
                     result.push(other);
@@ -65,22 +90,78 @@ fn unescape_dq(s: &str) -> String {
     result
 }
 
+/// POSIX unquoted-word backslash: `\X` preserves literal X.
+fn unescaped_word(lex: &logos::Lexer<InnerToken>) -> String {
+    let s = lex.slice();
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(next) = chars.next() {
+                result.push(next);
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+// ── public token enum ────────────────────────────────────────────────
+
+/// Token produced by the lexer, consumed by the parser.
 #[derive(Debug, PartialEq)]
 pub enum Token {
     Ident(String),
-    Pipe,
-    Semicolon,
+    Pipe,         // |
+    Semicolon,    // ;
     Eof,
+    // Logical operators
+    AndIf,        // &&
+    OrIf,         // ||
+    // Background
+    Background,   // &
+    // Redirections
+    Less,         // <
+    Great,        // >
+    DGreat,       // >>
+    LessAnd,      // <&
+    GreatAnd,     // >&
+    LessGreat,    // <>
+    DLess,        // <<
+    DLessDash,    // <<-
+    Clobber,      // >|
+    // Grouping
+    OpenParen,    // (
+    CloseParen,   // )
+    // Line separator
+    Newline,      // \n
 }
 
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Ident(ident) => write!(f, "{ident}"),
-            Self::Pipe => write!(f, "PIPE"),
-            Self::Semicolon => write!(f, "SEMICOLON"),
-            Self::Eof => write!(f, "END OF FILE"),
-        }
+        let s = match self {
+            Self::Ident(s) => return write!(f, "{s}"),
+            Self::Pipe => "|",
+            Self::Semicolon => ";",
+            Self::Eof => "EOF",
+            Self::AndIf => "&&",
+            Self::OrIf => "||",
+            Self::Background => "&",
+            Self::Less => "<",
+            Self::Great => ">",
+            Self::DGreat => ">>",
+            Self::LessAnd => "<&",
+            Self::GreatAnd => ">&",
+            Self::LessGreat => "<>",
+            Self::DLess => "<<",
+            Self::DLessDash => "<<-",
+            Self::Clobber => ">|",
+            Self::OpenParen => "(",
+            Self::CloseParen => ")",
+            Self::Newline => "<newline>",
+        };
+        write!(f, "{s}")
     }
 }
 
@@ -93,25 +174,39 @@ impl From<Token> for RString {
     }
 }
 
-/// Convert a stream of `InnerToken` items into our public `Token` stream,
-/// appending `Eof` at the end.
+// ── conversion ───────────────────────────────────────────────────────
+
+/// Run the logos lexer on `input` and produce a vector of public `Token`s,
+/// with `Eof` appended.
 pub(super) fn tokenize_with_logos(input: &str) -> Vec<Token> {
     let mut tokens: Vec<Token> = InnerToken::lexer(input)
         .filter_map(|t| match t {
-            Ok(InnerToken::Text(s)) | Ok(InnerToken::Ident(s)) => Some(Token::Ident(s)),
+            Ok(InnerToken::Text(s)) | Ok(InnerToken::Word(s)) => Some(Token::Ident(s)),
             Ok(InnerToken::Pipe) => Some(Token::Pipe),
             Ok(InnerToken::Semicolon) => Some(Token::Semicolon),
-            _ => None, // Whitespace (never emitted) and errors
+            Ok(InnerToken::AndIf) => Some(Token::AndIf),
+            Ok(InnerToken::OrIf) => Some(Token::OrIf),
+            Ok(InnerToken::Background) => Some(Token::Background),
+            Ok(InnerToken::Less) => Some(Token::Less),
+            Ok(InnerToken::Great) => Some(Token::Great),
+            Ok(InnerToken::DGreat) => Some(Token::DGreat),
+            Ok(InnerToken::LessAnd) => Some(Token::LessAnd),
+            Ok(InnerToken::GreatAnd) => Some(Token::GreatAnd),
+            Ok(InnerToken::LessGreat) => Some(Token::LessGreat),
+            Ok(InnerToken::DLess) => Some(Token::DLess),
+            Ok(InnerToken::DLessDash) => Some(Token::DLessDash),
+            Ok(InnerToken::Clobber) => Some(Token::Clobber),
+            Ok(InnerToken::OpenParen) => Some(Token::OpenParen),
+            Ok(InnerToken::CloseParen) => Some(Token::CloseParen),
+            Ok(InnerToken::Newline) => Some(Token::Newline),
+            _ => None, // Whitespace / LineCont are skipped
         })
         .collect();
-
     tokens.push(Token::Eof);
     tokens
 }
 
 /// Keyword lookup (currently a no-op stub for future keyword support).
-pub(super) fn get_keyword_token(ident: &str) -> anyhow::Result<Token> {
-    match ident {
-        _ => Err(anyhow::anyhow!("Not a keyword")),
-    }
+pub(super) fn get_keyword_token(_ident: &str) -> anyhow::Result<Token> {
+    Err(anyhow::anyhow!("Not a keyword"))
 }

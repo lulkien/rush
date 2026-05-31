@@ -9,7 +9,9 @@ use rush_interface::ExecResult;
 use crate::types::{Command, DashRegistry};
 
 mod exit;
+mod r#false;
 mod shared;
+mod r#true;
 
 #[allow(unused)]
 pub trait BuiltinCommand: Send + Sync {
@@ -67,6 +69,8 @@ pub fn init_module() -> anyhow::Result<BuiltinsRegistry> {
     let builtin_registry = BuiltinsRegistry::default();
 
     builtin_registry.register("exit", Rc::new(RefCell::new(Box::new(exit::Command {}))));
+    builtin_registry.register("true", Rc::new(RefCell::new(Box::new(r#true::Command {}))));
+    builtin_registry.register("false", Rc::new(RefCell::new(Box::new(r#false::Command {}))));
 
     Ok(builtin_registry)
 }
