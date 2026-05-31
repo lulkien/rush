@@ -198,8 +198,11 @@ fn write_all(fd: RawFd, mut data: &[u8]) {
 fn print_result(result: &ExecResult) {
     let fd: RawFd = if result.code == 0 { 1 } else { 2 };
     if !result.message.is_empty() {
-        write_all(fd, result.message.as_bytes());
-        write_all(fd, b"\n");
+        let msg = result.message.as_bytes();
+        write_all(fd, msg);
+        if !msg.ends_with(b"\n") {
+            write_all(fd, b"\n");
+        }
     }
 }
 
