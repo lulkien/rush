@@ -17,10 +17,14 @@ pub enum RedirectOp {
     Clobber,
 }
 
-/// A redirect operator paired with its target word.
+/// A redirect operator paired with its source fd and target word.
+///
+/// `src_fd` is None for the defaults: 0 for `<`, 1 for `>` and `>>`.
+/// It is set when an explicit fd number precedes the operator (e.g. `2>`).
 #[derive(Clone, Debug, Default)]
 pub struct Redirect {
     pub op: RedirectOp,
+    pub src_fd: Option<i32>,
     pub target: String,
 }
 

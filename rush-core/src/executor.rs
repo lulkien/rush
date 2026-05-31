@@ -118,6 +118,33 @@ impl Executor {
             return CommandResult::default();
         }
 
+        let redirects = command.redirects.clone();
+        let has_redirects = !redirects.is_empty();
+
+        if has_redirects {
+            match self.resolve(&command.name) {
+                ExecutionFrom::Builtin => {
+                    let saved = save_and_apply_redirects(&redirects);
+                    let result = self.builtin_reg.execute(command);
+                    print_result(&result);
+                    restore_redirect_fds(saved);
+                    return result;
+                }
+                ExecutionFrom::Plugin => {
+                    let saved = save_and_apply_redirects(&redirects);
+                    let result = self.plugin_reg.execute(command);
+                    print_result(&result);
+                    restore_redirect_fds(saved);
+                    return result;
+                }
+                ExecutionFrom::External(_path) => return self.execute_external_single(command),
+                ExecutionFrom::NotFound => return CommandResult::new(
+                    127,
+                    format!("{}: command not found", command.name.as_str()).as_str(),
+                ),
+            }
+        }
+
         match self.resolve(&command.name) {
             ExecutionFrom::Builtin => self.builtin_reg.execute(command),
             ExecutionFrom::Plugin => self.plugin_reg.execute(command),
@@ -162,6 +189,7 @@ impl Executor {
                 let sa = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
                 let _ = unsafe { sigaction(Signal::SIGINT, &sa) };
 
+                apply_redirects_for_child(&command.redirects);
                 let _ = nix::unistd::execvp(&prog, &argv_refs);
                 // execvp only returns on error
                 std::process::exit(127);
@@ -185,6 +213,7 @@ impl Executor {
         let sa = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
         let _ = unsafe { sigaction(Signal::SIGINT, &sa) };
 
+                apply_redirects_for_child(&command.redirects);
         let _ = nix::unistd::execvp(&prog, &argv_refs);
         // execvp only returns on error
         std::process::exit(127);
@@ -241,6 +270,7 @@ impl Executor {
                         self.exec_external(&commands[i]);
                     }
 
+                    apply_redirects_for_child(&commands[i].redirects);
                     let result = self.lookup_and_execute(commands[i].clone());
                     print_result(&result);
                     std::process::exit(result.code);
@@ -279,6 +309,76 @@ impl Executor {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────
+
+/// Default fd for a redirect operator (when no explicit fd is given).
+fn default_redirect_fd(op: &crate::types::RedirectOp) -> i32 {
+    match op {
+        crate::types::RedirectOp::Less
+        | crate::types::RedirectOp::DLess
+        | crate::types::RedirectOp::DLessDash
+        | crate::types::RedirectOp::LessGreat => 0,
+        _ => 1,
+    }
+}
+
+/// Apply redirects in a forked child. Opens files and dup2's them.
+fn apply_redirects_for_child(redirects: &[crate::types::Redirect]) {
+    use std::fs::{File, OpenOptions};
+    use std::os::fd::IntoRawFd;
+
+    for r in redirects {
+        let src = r.src_fd.unwrap_or_else(|| default_redirect_fd(&r.op));
+
+        let file_fd: RawFd = match r.op {
+            crate::types::RedirectOp::Less => {
+                File::open(&r.target).map(|f| f.into_raw_fd()).unwrap_or(-1)
+            }
+            crate::types::RedirectOp::Great | crate::types::RedirectOp::Clobber => {
+                File::create(&r.target).map(|f| f.into_raw_fd()).unwrap_or(-1)
+            }
+            crate::types::RedirectOp::DGreat => {
+                OpenOptions::new()
+                    .append(true).create(true)
+                    .open(&r.target)
+                    .map(|f| f.into_raw_fd())
+                    .unwrap_or(-1)
+            }
+            _ => -1,
+        };
+
+        if file_fd >= 0 {
+            let mut target = unsafe { OwnedFd::from_raw_fd(src) };
+            let _ = nix::unistd::dup2(raw_fd(file_fd), &mut target);
+            std::mem::forget(target);
+            let _ = nix::unistd::close(file_fd);
+        }
+    }
+}
+
+/// Save original fds, apply redirects, return saved state for restore.
+fn save_and_apply_redirects(redirects: &[crate::types::Redirect]) -> Vec<(i32, OwnedFd)> {
+    let mut saved = Vec::new();
+    for r in redirects {
+        let src = r.src_fd.unwrap_or_else(|| default_redirect_fd(&r.op));
+        // Save the original fd before overwriting it.
+        if let Ok(dup) = nix::unistd::dup(raw_fd(src)) {
+            saved.push((src, dup));
+        }
+    }
+    // Now apply redirects (same logic as for child).
+    apply_redirects_for_child(redirects);
+    saved
+}
+
+/// Restore original fds after a plugin/builtin ran with redirects.
+fn restore_redirect_fds(saved: Vec<(i32, OwnedFd)>) {
+    for (src, saved_fd) in saved {
+        let mut target = unsafe { OwnedFd::from_raw_fd(src) };
+        let _ = nix::unistd::dup2(&saved_fd, &mut target);
+        std::mem::forget(target);
+        // saved_fd dropped here — closes the dup.
+    }
+}
 
 /// Search PATH for an executable named `name`.
 fn find_in_path(name: &str) -> Option<PathBuf> {

@@ -124,9 +124,10 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_simple_command(&mut self) -> anyhow::Result<Command> {
         let mut name: Option<String> = None;
-        let mut args = Vec::new();
+        let mut args: Vec<String> = Vec::new();
         let mut redirects: Vec<Redirect> = Vec::new();
         let mut pending_op: Option<RedirectOp> = None;
+        let mut pending_fd: Option<i32> = None;
 
         loop {
             // Peek at the next token and decide what to do.
@@ -153,6 +154,20 @@ impl<'a> Parser<'a> {
             match action {
                 None => break,
                 Some(Action::Redirect(op)) => {
+                    // If the previous word was a bare fd number, steal it.
+                    // Check both the command name and the last argument.
+                    let steal_fd = |s: &str| s.chars().all(|c| c.is_ascii_digit());
+                    if let Some(ref n) = name
+                        && steal_fd(n)
+                    {
+                        pending_fd = n.parse().ok();
+                        name = None;
+                    } else if let Some(last) = args.last()
+                        && steal_fd(last)
+                    {
+                        pending_fd = last.parse().ok();
+                        args.pop();
+                    }
                     self.advance();
                     pending_op = Some(op);
                 }
@@ -166,7 +181,11 @@ impl<'a> Parser<'a> {
                         word.to_string()
                     };
                     if let Some(op) = pending_op.take() {
-                        redirects.push(Redirect { op, target: value });
+                        redirects.push(Redirect {
+                            op,
+                            src_fd: pending_fd.take(),
+                            target: value,
+                        });
                     } else if name.is_none() {
                         name = Some(value);
                     } else {
