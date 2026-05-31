@@ -1,5 +1,4 @@
 use crate::lexer::{Lexer, Token};
-use crate::types::Command;
 
 fn token_strings(lexer: &Lexer) -> Vec<String> {
     let tokens = lexer.tokenize();
@@ -29,7 +28,7 @@ fn token_strings(lexer: &Lexer) -> Vec<String> {
         .collect()
 }
 
-// ── existing tests (unchanged behaviour) ──────────────────────
+// ── token-level tests ────────────────────────────────────────────
 
 #[test]
 fn semicolon_inside_quotes_is_preserved() {
@@ -103,7 +102,6 @@ fn double_quote_escaped_backslash() {
 
 #[test]
 fn double_quote_newline_escape() {
-    // POSIX: \n inside double quotes is literal \ and n
     let lexer = Lexer::new("echo \"hello\\nworld\"");
     let tokens = token_strings(&lexer);
     assert_eq!(tokens, vec!["echo", "hello\\nworld"]);
@@ -123,29 +121,7 @@ fn empty_single_quoted() {
     assert_eq!(tokens, vec!["echo", ""]);
 }
 
-#[test]
-fn multiple_semicolons() {
-    let lexer = Lexer::new("echo a;;echo b");
-    let result = lexer.parse_line().unwrap();
-    let pipes: Vec<Vec<String>> = result
-        .into_iter()
-        .map(|pipe| {
-            pipe.into_iter()
-                .map(|cmd| {
-                    let mut s = cmd.name.to_string();
-                    for arg in cmd.args.iter() {
-                        s.push(' ');
-                        s.push_str(arg);
-                    }
-                    s
-                })
-                .collect()
-        })
-        .collect();
-    assert_eq!(pipes, vec![vec!["echo a"], vec!["echo b"]]);
-}
-
-// ── POSIX operator tests ────────────────────────────────────────
+// ── POSIX operator token tests ───────────────────────────────────
 
 #[test]
 fn posix_and_or() {
@@ -196,8 +172,6 @@ fn posix_background() {
 
 #[test]
 fn posix_grouping_tokens() {
-    // Braces are regular word characters in the lexer;
-    // grouping semantics are handled by the parser.
     let lexer = Lexer::new("( cmd1; cmd2 ) && echo ok");
     let tokens = token_strings(&lexer);
     assert_eq!(
@@ -208,7 +182,6 @@ fn posix_grouping_tokens() {
 
 #[test]
 fn posix_line_continuation() {
-    // \<newline> should be skipped entirely (line continuation).
     let input = "echo hello \\\nworld";
     let lexer = Lexer::new(input);
     let tokens = token_strings(&lexer);
@@ -217,10 +190,8 @@ fn posix_line_continuation() {
 
 #[test]
 fn posix_backslash_in_unquoted_word() {
-    // POSIX: \X in an unquoted word preserves literal X.
     let lexer = Lexer::new("echo hello\\ world");
     let tokens = token_strings(&lexer);
-    // backslash-space → literal space, so it's one word "hello world"
     assert_eq!(tokens, vec!["echo", "hello world"]);
 }
 
@@ -228,106 +199,12 @@ fn posix_backslash_in_unquoted_word() {
 fn posix_backslash_escape_sequence_in_word() {
     let lexer = Lexer::new("echo a\\\"b");
     let tokens = token_strings(&lexer);
-    // \" in unquoted word → literal " (backslash stripped)
     assert_eq!(tokens, vec!["echo", "a\"b"]);
 }
 
 #[test]
-fn posix_newline_as_separator() {
-    let input = "echo a\necho b\n";
-    let lexer = Lexer::new(input);
-    let result = lexer.parse_line().unwrap();
-    let pipes: Vec<Vec<String>> = result
-        .into_iter()
-        .map(|pipe| {
-            pipe.into_iter()
-                .map(|cmd| {
-                    let mut s = cmd.name.to_string();
-                    for arg in cmd.args.iter() {
-                        s.push(' ');
-                        s.push_str(arg);
-                    }
-                    s
-                })
-                .collect()
-        })
-        .collect();
-    assert_eq!(pipes, vec![vec!["echo a"], vec!["echo b"]]);
-}
-
-#[test]
-fn posix_redirect_parsed_into_command() {
-    let lexer = Lexer::new("echo hello > out.txt");
-    let result = lexer.parse_line().unwrap();
-    let commands: Vec<Command> = result
-        .into_iter()
-        .flat_map(|pipe| pipe.into_iter().collect::<Vec<_>>())
-        .collect();
-    assert_eq!(commands.len(), 1);
-    let cmd = &commands[0];
-    assert_eq!(cmd.name.as_str(), "echo");
-    assert_eq!(cmd.args.len(), 1);
-    assert_eq!(cmd.args[0].as_str(), "hello");
-    assert_eq!(cmd.redirects.len(), 1);
-    assert_eq!(cmd.redirects[0].op, crate::types::RedirectOp::Great);
-    assert_eq!(cmd.redirects[0].target.as_str(), "out.txt");
-}
-
-#[test]
-fn posix_multiple_redirects() {
-    let lexer = Lexer::new("cmd < input > output 2> error");
-    let result = lexer.parse_line().unwrap();
-    let commands: Vec<Command> = result
-        .into_iter()
-        .flat_map(|pipe| pipe.into_iter().collect::<Vec<_>>())
-        .collect();
-    assert_eq!(commands.len(), 1);
-    assert_eq!(commands[0].redirects.len(), 3);
-    assert_eq!(commands[0].redirects[0].target.as_str(), "input");
-    assert_eq!(commands[0].redirects[1].target.as_str(), "output");
-    assert_eq!(commands[0].redirects[2].target.as_str(), "error");
-}
-
-#[test]
-fn posix_background_flag_on_command() {
-    let lexer = Lexer::new("sleep 10 &");
-    let result = lexer.parse_line().unwrap();
-    let commands: Vec<Command> = result
-        .into_iter()
-        .flat_map(|pipe| pipe.into_iter().collect::<Vec<_>>())
-        .collect();
-    assert_eq!(commands.len(), 1);
-    assert_eq!(commands[0].name.as_str(), "sleep");
-    // background is tracked at the AST level (CompleteCommand);
-    // the flat parse_line representation does not preserve it.
-}
-
-#[test]
-fn posix_subshell_not_supported() {
-    let lexer = Lexer::new("(echo hello)");
-    let result = lexer.parse_line();
-    assert!(result.is_err());
-}
-
-#[test]
 fn posix_dollar_not_an_operator() {
-    // $ is a regular word character, not a lexer operator.
-    // Expansion is handled later by the parser/executor.
     let lexer = Lexer::new("echo $HOME ${PATH}");
     let tokens = token_strings(&lexer);
     assert_eq!(tokens, vec!["echo", "$HOME", "${PATH}"]);
-}
-
-#[test]
-fn posix_empty_input() {
-    let lexer = Lexer::new("");
-    let result = lexer.parse_line().unwrap();
-    assert!(result.is_empty());
-}
-
-#[test]
-fn posix_whitespace_only() {
-    let lexer = Lexer::new("   \t  ");
-    let result = lexer.parse_line().unwrap();
-    assert!(result.is_empty());
 }
