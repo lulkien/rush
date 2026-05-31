@@ -82,7 +82,7 @@ impl<'a> Parser<'a> {
     pub(crate) fn parse_pipeline(&mut self) -> anyhow::Result<Pipeline> {
         // Leading `!` negation
         let negation = match self.peek() {
-            Some(Token::Ident(s)) if s == "!" => {
+            Some(Token::Word(s, _)) if s == "!" => {
                 self.advance();
                 true
             }
@@ -149,7 +149,7 @@ impl<'a> Parser<'a> {
                 Some(Token::DLess) => Some(Action::Redirect(RedirectOp::DLess)),
                 Some(Token::DLessDash) => Some(Action::Redirect(RedirectOp::DLessDash)),
                 Some(Token::Clobber) => Some(Action::Redirect(RedirectOp::Clobber)),
-                Some(Token::Ident(s)) => Some(Action::Word(s.clone())),
+                Some(Token::Word(s, q)) => Some(Action::Word(s.clone(), *q)),
             };
 
             match action {
@@ -158,17 +158,24 @@ impl<'a> Parser<'a> {
                     self.advance();
                     pending_op = Some(op);
                 }
-                Some(Action::Word(word)) => {
+                Some(Action::Word(word, quote)) => {
                     self.advance();
+                    // Single-quoted words get a \x01 prefix so the
+                    // expansion pass can skip them.
+                    let value: RString = if quote == crate::lexer::token::QuoteKind::SingleQuoted {
+                        format!("\x01{word}").into()
+                    } else {
+                        word.into()
+                    };
                     if let Some(op) = pending_op.take() {
                         redirects.push(Redirect {
                             op,
-                            target: word.into(),
+                            target: value,
                         });
                     } else if name.is_none() {
-                        name = Some(word.into());
+                        name = Some(value);
                     } else {
-                        args.push(word.into());
+                        args.push(value);
                     }
                 }
             }

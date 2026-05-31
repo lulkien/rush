@@ -21,7 +21,7 @@ impl<'a> Parser<'a> {
                     ..Default::default()
                 })
             }
-            Some(Token::Ident(s)) => match s.as_str() {
+            Some(Token::Word(s, _)) => match s.as_str() {
                 "{" => {
                     self.advance();
                     let program = self.parse_program()?;
@@ -61,7 +61,7 @@ impl<'a> Parser<'a> {
         let mut elifs = Vec::new();
         while self.peek_is_reserved() {
             match self.peek() {
-                Some(Token::Ident(s)) if s == "elif" => {
+                Some(Token::Word(s, _)) if s == "elif" => {
                     self.advance();
                     let cond = self.parse_program()?;
                     self.expect_reserved("then")?;
@@ -74,7 +74,7 @@ impl<'a> Parser<'a> {
 
         let else_body = if self.peek_is_reserved() {
             match self.peek() {
-                Some(Token::Ident(s)) if s == "else" => {
+                Some(Token::Word(s, _)) if s == "else" => {
                     self.advance();
                     Some(self.parse_program()?)
                 }
@@ -101,7 +101,7 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse_while_clause(&mut self) -> anyhow::Result<Command> {
         let _is_until = match self.peek() {
-            Some(Token::Ident(s)) if s == "until" => {
+            Some(Token::Word(s, _)) if s == "until" => {
                 self.advance();
                 true
             }
@@ -133,12 +133,12 @@ impl<'a> Parser<'a> {
         // Optional `in words...`
         let words = if self.peek_is_reserved() {
             match self.peek() {
-                Some(Token::Ident(s)) if s == "in" => {
+                Some(Token::Word(s, _)) if s == "in" => {
                     self.advance();
                     let mut w = Vec::new();
                     loop {
                         match self.peek() {
-                            Some(Token::Ident(s))
+                            Some(Token::Word(s, _))
                                 if !Self::is_reserved(s) || s == "do" =>
                             {
                                 if s == "do" {
@@ -184,7 +184,7 @@ impl<'a> Parser<'a> {
         let mut arms = Vec::new();
         loop {
             if self.peek_is_reserved()
-                && let Some(Token::Ident(s)) = self.peek()
+                && let Some(Token::Word(s, _)) = self.peek()
                 && s == "esac"
             {
                 break;
@@ -225,7 +225,7 @@ impl<'a> Parser<'a> {
                     continue;
                 }
                 if self.peek_is_reserved()
-                    && let Some(Token::Ident(s)) = self.peek()
+                    && let Some(Token::Word(s, _)) = self.peek()
                     && (s == "esac" || s == "fi" || s == "done" || s == "elif"
                         || s == "else" || s == "then" || s == "do")
                 {

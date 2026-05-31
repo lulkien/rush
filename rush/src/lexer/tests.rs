@@ -6,7 +6,7 @@ fn token_strings(lexer: &Lexer) -> Vec<String> {
     tokens
         .iter()
         .filter_map(|t| match t {
-            Token::Ident(s) => Some(s.clone()),
+            Token::Word(s, _) => Some(s.clone()),
             Token::Pipe => Some("|".into()),
             Token::Semicolon => Some(";".into()),
             Token::AndIf => Some("&&".into()),

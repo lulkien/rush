@@ -31,7 +31,7 @@ pub(crate) struct Parser<'a> {
 /// Internal dispatch to avoid borrow conflicts in the command parser.
 pub(crate) enum Action {
     Redirect(RedirectOp),
-    Word(String),
+    Word(String, crate::lexer::token::QuoteKind),
 }
 
 impl<'a> Parser<'a> {
@@ -57,7 +57,7 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn expect_ident(&mut self) -> anyhow::Result<String> {
         match self.advance() {
-            Some(Token::Ident(s)) => Ok(s.clone()),
+            Some(Token::Word(s, _)) => Ok(s.clone()),
             Some(t) => Err(anyhow::anyhow!("expected word, found {t}")),
             None => Err(anyhow::anyhow!("unexpected end of input")),
         }
@@ -72,7 +72,7 @@ impl<'a> Parser<'a> {
     pub(crate) fn at_terminator(&self) -> bool {
         match self.peek() {
             Some(Token::CloseParen) => true,
-            Some(Token::Ident(s)) => matches!(
+            Some(Token::Word(s, _)) => matches!(
                 s.as_str(),
                 "fi" | "done" | "esac" | "then" | "else" | "elif" | "do" | "}"
             ),
@@ -117,7 +117,7 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn peek_is_reserved(&self) -> bool {
         match self.peek() {
-            Some(Token::Ident(s)) => Self::is_reserved(s),
+            Some(Token::Word(s, _)) => Self::is_reserved(s),
             _ => false,
         }
     }
@@ -125,7 +125,7 @@ impl<'a> Parser<'a> {
     /// Consume a reserved word and return it, or error.
     pub(crate) fn expect_reserved(&mut self, word: &str) -> anyhow::Result<()> {
         match self.advance() {
-            Some(Token::Ident(s)) if s == word => Ok(()),
+            Some(Token::Word(s, _)) if s == word => Ok(()),
             Some(t) => Err(anyhow::anyhow!("expected '{word}', found {t}")),
             None => Err(anyhow::anyhow!("expected '{word}', found end of input")),
         }

@@ -3,6 +3,16 @@ use std::fmt::Display;
 use abi_stable::std_types::RString;
 use logos::Logos;
 
+// ── quote kind ───────────────────────────────────────────────────────
+
+/// Whether a word was quoted and how.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum QuoteKind {
+    Unquoted,
+    DoubleQuoted,
+    SingleQuoted,
+}
+
 // ── logos inner token ────────────────────────────────────────────────
 
 /// Intermediate token produced by the logos lexer.
@@ -11,9 +21,10 @@ use logos::Logos;
 enum InnerToken {
     /// Single-quoted string — everything inside is literal.
     #[regex(r"'[^']*'", single_quoted)]
+    SingleQuotedText(String),
     /// Double-quoted string — `\` escapes any following character.
     #[regex(r#""([^"\\]|\\.)*""#, double_quoted)]
-    Text(String),
+    DoubleQuotedText(String),
 
     // ── multi-char operators (longest match wins) ──
     #[token("<<-")] DLessDash,
@@ -46,7 +57,7 @@ enum InnerToken {
     // ── unquoted word with backslash escapes ──
     // POSIX: `\X` preserves literal X; `\<newline>` is line continuation (handled above).
     #[regex(r#"([^\t\n |;&<>()'"\\]|\\[^\n])+"#, unescaped_word)]
-    Word(String),
+    UnquotedWord(String),
 
     // ── horizontal whitespace (tabs, spaces) ──
     #[regex(r"[ \t]+", logos::skip)]
@@ -114,7 +125,8 @@ fn unescaped_word(lex: &logos::Lexer<InnerToken>) -> String {
 /// Token produced by the lexer, consumed by the parser.
 #[derive(Debug, PartialEq)]
 pub enum Token {
-    Ident(String),
+    /// A shell word with its quoting context.
+    Word(String, QuoteKind),
     Pipe,         // |
     Semicolon,    // ;
     Eof,
@@ -140,10 +152,20 @@ pub enum Token {
     Newline,      // \n
 }
 
+impl Token {
+    /// Convenience: extract the word text regardless of quote kind.
+    pub fn as_word(&self) -> Option<&str> {
+        match self {
+            Token::Word(s, _) => Some(s),
+            _ => None,
+        }
+    }
+}
+
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            Self::Ident(s) => return write!(f, "{s}"),
+            Self::Word(s, _) => return write!(f, "{s}"),
             Self::Pipe => "|",
             Self::Semicolon => ";",
             Self::Eof => "EOF",
@@ -170,7 +192,7 @@ impl Display for Token {
 impl From<Token> for RString {
     fn from(val: Token) -> Self {
         match val {
-            Token::Ident(ident) => ident.into(),
+            Token::Word(ident, _) => ident.into(),
             _ => RString::new(),
         }
     }
@@ -183,7 +205,13 @@ impl From<Token> for RString {
 pub(super) fn tokenize_with_logos(input: &str) -> Vec<Token> {
     let mut tokens: Vec<Token> = InnerToken::lexer(input)
         .filter_map(|t| match t {
-            Ok(InnerToken::Text(s)) | Ok(InnerToken::Word(s)) => Some(Token::Ident(s)),
+            Ok(InnerToken::SingleQuotedText(s)) => {
+                Some(Token::Word(s, QuoteKind::SingleQuoted))
+            }
+            Ok(InnerToken::DoubleQuotedText(s)) => {
+                Some(Token::Word(s, QuoteKind::DoubleQuoted))
+            }
+            Ok(InnerToken::UnquotedWord(s)) => Some(Token::Word(s, QuoteKind::Unquoted)),
             Ok(InnerToken::Pipe) => Some(Token::Pipe),
             Ok(InnerToken::Semicolon) => Some(Token::Semicolon),
             Ok(InnerToken::AndIf) => Some(Token::AndIf),

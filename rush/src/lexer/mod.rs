@@ -145,7 +145,7 @@ impl Lexer {
                 }
 
                 // ── words ─────────────────────────────────────
-                Token::Ident(word) => {
+                Token::Word(word, _) => {
                     if let Some(op) = pending_redirect_op.take() {
                         // This word is the target of the preceding redirect.
                         current_redirects.push(Redirect {

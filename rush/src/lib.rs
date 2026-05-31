@@ -45,13 +45,21 @@ fn expand_pipeline(pipeline: &mut types::Pipeline, vars: &VarStore) {
 }
 
 fn expand_command(cmd: &mut types::Command, vars: &VarStore) {
-    // Expand $VAR in the command name
+    // Expand $VAR in the command name (always unquoted at the grammar level).
     let expanded_name = vars.expand_string(&cmd.name, 0);
     if expanded_name != *cmd.name {
         cmd.name = expanded_name.into();
     }
-    // Expand $VAR in args
+    // Expand $VAR in args — but NOT inside single-quoted words.
     for arg in cmd.args.iter_mut() {
+        // Single-quoted args: no expansion, leave literal.
+        // (The expansion pass only runs on unquoted and double-quoted words;
+        //  single-quoted content is stored as-is with a marker.)
+        if arg.starts_with('\x01') {
+            // Internal marker for single-quoted content.
+            *arg = arg[1..].into();
+            continue;
+        }
         let expanded = vars.expand_string(arg, 0);
         if expanded != **arg {
             *arg = expanded.into();
