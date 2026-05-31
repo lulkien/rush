@@ -225,15 +225,17 @@ impl Executor {
                         // SAFETY: fd 0 is always open; we forget to prevent drop from closing.
                         let mut stdin_fd =
                             unsafe { std::os::fd::OwnedFd::from_raw_fd(nix::libc::STDIN_FILENO) };
-                        nix::unistd::dup2(&pipes[i - 1].0, &mut stdin_fd)
-                            .expect("dup2 stdin");
+                        if nix::unistd::dup2(&pipes[i - 1].0, &mut stdin_fd).is_err() {
+                            std::process::exit(1);
+                        }
                         std::mem::forget(stdin_fd);
                     }
                     if i < n - 1 {
                         let mut stdout_fd =
                             unsafe { std::os::fd::OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO) };
-                        nix::unistd::dup2(&pipes[i].1, &mut stdout_fd)
-                            .expect("dup2 stdout");
+                        if nix::unistd::dup2(&pipes[i].1, &mut stdout_fd).is_err() {
+                            std::process::exit(1);
+                        }
                         std::mem::forget(stdout_fd);
                     }
                     drop(pipes);
@@ -315,15 +317,20 @@ fn build_argv(command: &Command) -> (CString, Vec<CString>) {
     (prog, argv)
 }
 
-/// Write a byte slice to a raw fd, handling partial writes and EINTR.
-fn write_all(fd: RawFd, mut data: &[u8]) {
+/// Write a byte slice to a raw fd.
+/// Retries on EINTR, returns true if all bytes were written.
+fn write_all(fd: RawFd, mut data: &[u8]) -> bool {
+    use nix::errno::Errno;
     let fd_borrowed = raw_fd(fd);
     while !data.is_empty() {
         match write(fd_borrowed, data) {
-            Ok(n) if n > 0 => data = &data[n..],
-            _ => break,
+            Ok(0) => return false,
+            Ok(n) => data = &data[n..],
+            Err(Errno::EINTR) => continue,
+            Err(_) => return false,
         }
     }
+    true
 }
 
 fn print_result(result: &CommandResult) {

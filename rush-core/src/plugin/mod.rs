@@ -65,13 +65,15 @@ impl PluginRegistry {
         // Drop mutable borrow, we done here
         drop(metadata_ref);
 
-        plugin_metadata
+        match plugin_metadata
             .as_ref()
             .borrow()
             .plugin
             .as_ref()
-            .expect("Plugin must be valid at this point")
-            .execute()(command.args)
+        {
+            Some(module) => module.execute()(command.args),
+            None => CommandResult::new(1, "plugin unloaded unexpectedly"),
+        }
     }
 
     pub fn names(&self) -> Vec<String> {
