@@ -9,6 +9,8 @@ use rustyline::{
     highlight::Highlighter,
     validate::Validator,
     Helper, Context,
+    Event, KeyEvent, KeyCode, Modifiers,
+    Cmd, Movement, Word,
 };
 
 /// Bundles all rustyline extension traits for our shell.
@@ -167,6 +169,25 @@ impl InputHandler {
         let mut editor: Editor<InputHelper, rustyline::history::FileHistory> =
             Editor::with_config(config)?;
         editor.set_helper(Some(helper));
+
+        // Ctrl+Backspace → backward-kill-word.
+        // Terminals send \x1b\x7f (ESC DEL) for Ctrl+Backspace.
+        editor.bind_sequence(
+            Event::KeySeq(vec![
+                KeyEvent(KeyCode::Esc, Modifiers::NONE),
+                KeyEvent(KeyCode::Backspace, Modifiers::NONE),
+            ]),
+            Cmd::Kill(Movement::BackwardWord(1, Word::Emacs)),
+        );
+        // rxvt-like terminals send \x1b\x08 (ESC ^H).
+        editor.bind_sequence(
+            Event::KeySeq(vec![
+                KeyEvent(KeyCode::Esc, Modifiers::NONE),
+                KeyEvent(KeyCode::Char('\x08'), Modifiers::NONE),
+            ]),
+            Cmd::Kill(Movement::BackwardWord(1, Word::Emacs)),
+        );
+
         Ok(Self { editor })
     }
 
