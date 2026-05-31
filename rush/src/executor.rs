@@ -1,4 +1,7 @@
+use std::ffi::CString;
 use std::os::fd::{BorrowedFd, FromRawFd, OwnedFd, RawFd};
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 
 use dashmap::DashMap;
 use nix::{
@@ -17,9 +20,11 @@ use crate::{
     types::{Command, CommandKind, DashRegistry, Program},
 };
 
+#[derive(Clone)]
 enum ExecutionFrom {
     Builtin,
     Plugin,
+    External(PathBuf),
     NotFound,
 }
 
@@ -115,37 +120,78 @@ impl Executor {
             return ExecResult::default();
         }
 
-        if let Some(cache_entry) = self.entry_point_cache.get(command.name.as_str()) {
-            return match cache_entry.value() {
-                ExecutionFrom::Builtin => self.builtin_reg.execute(command),
-                ExecutionFrom::Plugin => self.plugin_reg.execute(command),
-                ExecutionFrom::NotFound => ExecResult::new(
-                    127,
-                    format!("{}: command not found", command.name.as_str()).as_str(),
-                ),
-            };
-        }
-
-        self.lookup_and_execute(command)
-    }
-
-    fn lookup_and_execute(&self, command: Command) -> ExecResult {
-        if self.plugin_reg.contains(&command.name) {
-            self.entry_point_cache
-                .insert(command.name.to_string(), ExecutionFrom::Plugin);
-            self.plugin_reg.execute(command)
-        } else if self.builtin_reg.contains(&command.name) {
-            self.entry_point_cache
-                .insert(command.name.to_string(), ExecutionFrom::Builtin);
-            self.builtin_reg.execute(command)
-        } else {
-            self.entry_point_cache
-                .insert(command.name.to_string(), ExecutionFrom::NotFound);
-            ExecResult::new(
+        match self.resolve(&command.name) {
+            ExecutionFrom::Builtin => self.builtin_reg.execute(command),
+            ExecutionFrom::Plugin => self.plugin_reg.execute(command),
+            ExecutionFrom::External(_path) => self.execute_external_single(command),
+            ExecutionFrom::NotFound => ExecResult::new(
                 127,
                 format!("{}: command not found", command.name.as_str()).as_str(),
-            )
+            ),
         }
+    }
+
+    /// Resolve a command name and cache the result.
+    fn resolve(&self, name: &str) -> ExecutionFrom {
+        if let Some(cached) = self.entry_point_cache.get(name) {
+            return cached.value().clone();
+        }
+
+        let result = if self.plugin_reg.contains(name) {
+            ExecutionFrom::Plugin
+        } else if self.builtin_reg.contains(name) {
+            ExecutionFrom::Builtin
+        } else if let Some(path) = find_in_path(name) {
+            ExecutionFrom::External(path)
+        } else {
+            ExecutionFrom::NotFound
+        };
+
+        self.entry_point_cache
+            .insert(name.to_string(), result.clone());
+        result
+    }
+
+    /// Fork and exec an external command (single-command, no pipe).
+    fn execute_external_single(&self, command: Command) -> ExecResult {
+        let (prog, argv) = build_argv(&command);
+        let argv_refs: Vec<&std::ffi::CStr> = argv.iter().map(|s| s.as_c_str()).collect();
+
+        // SAFETY: single-threaded; child exits or execs immediately.
+        match unsafe { fork() } {
+            Ok(ForkResult::Child) => {
+                // Reset SIGINT to default so Ctrl+C kills this child.
+                let sa = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
+                let _ = unsafe { sigaction(Signal::SIGINT, &sa) };
+
+                let _ = nix::unistd::execvp(&prog, &argv_refs);
+                // execvp only returns on error
+                std::process::exit(127);
+            }
+            Ok(ForkResult::Parent { child }) => match waitpid(child, None) {
+                Ok(WaitStatus::Exited(_, code)) => ExecResult::new(code as u8, ""),
+                Ok(WaitStatus::Signaled(_, sig, _)) => {
+                    ExecResult::new(128 + sig as u8, "")
+                }
+                _ => ExecResult::new(1, ""),
+            },
+            Err(e) => ExecResult::new(1, &format!("fork() failed: {e}")),
+        }
+    }
+
+    /// Execute an external command in the current process (used in pipe children).
+    /// Never returns — either execs successfully or exits with 127.
+    fn exec_external(&self, command: &Command) -> ! {
+        let (prog, argv) = build_argv(command);
+        let argv_refs: Vec<&std::ffi::CStr> = argv.iter().map(|s| s.as_c_str()).collect();
+
+        // Reset SIGINT to default.
+        let sa = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
+        let _ = unsafe { sigaction(Signal::SIGINT, &sa) };
+
+        let _ = nix::unistd::execvp(&prog, &argv_refs);
+        // execvp only returns on error
+        std::process::exit(127);
     }
 
     fn execute_pipe_forked(&self, commands: Vec<Command>) -> ExecResult {
@@ -192,6 +238,14 @@ impl Executor {
                     }
                     drop(pipes);
 
+                    // External commands: exec directly (no fork inside fork).
+                    if matches!(
+                        self.resolve(&commands[i].name),
+                        ExecutionFrom::External(_)
+                    ) {
+                        self.exec_external(&commands[i]);
+                    }
+
                     let result = self.lookup_and_execute(commands[i].clone());
                     print_result(&result);
                     std::process::exit(result.code as i32);
@@ -214,6 +268,51 @@ impl Executor {
 
         ExecResult::new(last_code as u8, "")
     }
+
+    /// Lookup and execute a builtin or plugin (no PATH search).
+    /// Used by pipe children when the command is not external.
+    fn lookup_and_execute(&self, command: Command) -> ExecResult {
+        match self.resolve(&command.name) {
+            ExecutionFrom::Builtin => self.builtin_reg.execute(command),
+            ExecutionFrom::Plugin => self.plugin_reg.execute(command),
+            _ => ExecResult::new(
+                127,
+                format!("{}: command not found", command.name.as_str()).as_str(),
+            ),
+        }
+    }
+}
+
+// ── helpers ───────────────────────────────────────────────────────────
+
+/// Search PATH for an executable named `name`.
+fn find_in_path(name: &str) -> Option<PathBuf> {
+    let path_var = std::env::var("PATH").ok()?;
+    for dir in path_var.split(':') {
+        if dir.is_empty() {
+            continue;
+        }
+        let candidate = PathBuf::from(dir).join(name);
+        if let Ok(meta) = std::fs::metadata(&candidate)
+            && meta.is_file()
+            && meta.permissions().mode() & 0o111 != 0
+        {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// Build argc/argv from a Command for execvp / execv.
+/// Returns (program_name, owned_CStrings).
+fn build_argv(command: &Command) -> (CString, Vec<CString>) {
+    let prog = CString::new(command.name.as_str()).unwrap_or_default();
+    let mut argv: Vec<CString> = Vec::with_capacity(1 + command.args.len());
+    argv.push(prog.clone());
+    for arg in &command.args {
+        argv.push(CString::new(arg.as_str()).unwrap_or_default());
+    }
+    (prog, argv)
 }
 
 /// Write a byte slice to a raw fd, handling partial writes and EINTR.
