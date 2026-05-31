@@ -14,5 +14,5 @@ logos = "0.15"
 paste = "1.0.15"
 rush-interface = { path = "../rush-interface" }
 rush-macros = { path = "../rush-macros" }
-rustyline = "18.0.0"
+rustyline = { version = "18.0.0", features = ["with-fuzzy"] }
 nix = { version = "0.31", features = ["process"] }
