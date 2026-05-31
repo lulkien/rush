@@ -152,4 +152,9 @@ impl VarStore {
             .map(|e| e.key().clone())
             .collect()
     }
+
+    /// Get the first entry of a variable (for single-value vars like cache dir).
+    pub fn first(&self, name: &str) -> String {
+        self.get(name).first().cloned().unwrap_or_default()
+    }
 }

@@ -16,7 +16,6 @@ pub mod parser;
 pub mod plugin;
 pub mod shell_builtins;
 pub mod types;
-pub mod user;
 pub mod var;
 
 use crate::types::{AndOrList, Pipeline};
@@ -142,27 +141,32 @@ fn split_assignment(word: &str) -> Option<(String, String)> {
     None
 }
 
-/// Initialise the shell runtime (logger, env, plugins, builtins, vars).
-pub fn init_runtime() -> anyhow::Result<(user::UserDirectoryRegistry, Executor, Rc<var::VarStore>)> {
+/// Initialise the shell runtime (logger, plugins, builtins, vars).
+pub fn init_runtime() -> anyhow::Result<(Executor, Rc<var::VarStore>)> {
     Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    let user_dirs = user::init_module()?;
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let data_dir = format!("{home}/.local/share/rush");
+    let config_dir = format!("{home}/.config/rush");
+    let cache_dir = format!("{home}/.cache/rush");
+
+    // Ensure directories exist.
+    for d in &[&data_dir, &config_dir, &cache_dir] {
+        std::fs::create_dir_all(d)?;
+    }
+
     let vars = Rc::new(var::VarStore::default());
 
-    // Set RUSH_*_PATH variables for plugin discovery.
-    const SYSTEM_LOCAL_DATA_PATH: &str = "/usr/local/share/rush";
-    const SYSTEM_DATA_PATH: &str = "/usr/share/rush";
-    const SYSTEM_CONFIG_PATH: &str = "/etc/rush";
     vars.set("RUSH_DATA_PATH", vec![
-        user_dirs.get_data_dir(),
-        SYSTEM_LOCAL_DATA_PATH.to_string(),
-        SYSTEM_DATA_PATH.to_string(),
+        data_dir,
+        "/usr/local/share/rush".to_string(),
+        "/usr/share/rush".to_string(),
     ]);
     vars.set("RUSH_CONFIG_PATH", vec![
-        user_dirs.get_config_dir(),
-        SYSTEM_CONFIG_PATH.to_string(),
+        config_dir,
+        "/etc/rush".to_string(),
     ]);
-    vars.set("RUSH_CACHE_PATH", vec![user_dirs.get_cache_dir()]);
+    vars.set("RUSH_CACHE_PATH", vec![cache_dir]);
 
     let executor =
         executor::init_module(shell_builtins::init_module()?, plugin::init_module(&vars)?, Rc::clone(&vars))?;
@@ -171,5 +175,5 @@ pub fn init_runtime() -> anyhow::Result<(user::UserDirectoryRegistry, Executor, 
         vars.set_colon(&key, &value);
     }
 
-    Ok((user_dirs, executor, vars))
+    Ok((executor, vars))
 }

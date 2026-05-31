@@ -13,20 +13,20 @@ use crate::input::InputHandler;
 /// Run a shell script from a file.
 pub fn run_script(path: &str) -> anyhow::Result<()> {
     Builder::from_env(Env::default().default_filter_or("info")).init();
-    let (_user_dirs, executor, vars) = init_runtime()?;
+    let (_executor, vars) = init_runtime()?;
     let source = fs::read_to_string(path)?;
-    execute_string(&executor, &vars, &source)?;
+    execute_string(&_executor, &vars, &source)?;
     Ok(())
 }
 
 /// Start the interactive REPL.
 pub fn start_shell() -> anyhow::Result<()> {
-    let (user_dirs, executor, vars) = init_runtime()?;
+    let (executor, vars) = init_runtime()?;
 
     let mut input_handler = InputHandler::new()?;
     input_handler.set_commands(executor.command_names());
 
-    let history_file = PathBuf::from(user_dirs.get_cache_dir()).join(".history");
+    let history_file = PathBuf::from(vars.first("RUSH_CACHE_PATH")).join(".history");
     if let Err(e) = File::create_new(&history_file) {
         debug!(
             "Failed to create history file: {}. Error: {e}",
