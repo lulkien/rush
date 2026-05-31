@@ -7,6 +7,7 @@ use rush_interface::CommandResult;
 
 use crate::types::{Command, DashRegistry};
 
+mod cd;
 mod history_search;
 
 #[allow(unused)]
@@ -65,6 +66,10 @@ impl BuiltinsRegistry {
 pub fn init_module() -> anyhow::Result<BuiltinsRegistry> {
     let builtin_registry = BuiltinsRegistry::default();
 
+    builtin_registry.register(
+        "cd",
+        Rc::new(RefCell::new(Box::new(cd::Command {}))),
+    );
     builtin_registry.register(
         "history-search",
         Rc::new(RefCell::new(Box::new(history_search::Command {}))),
