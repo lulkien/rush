@@ -80,8 +80,11 @@ fn discover_from_path<P: AsRef<Path>>(
             file.read_to_end(&mut buf)?;
 
             if let Ok(metadata) = PluginMetadata::from_raw_metadata(dir_path, &buf) {
-                debug!("Registered plugin path: {}", metadata.name);
-                registered_count += 1;
+                if !plugin.contains(&metadata.name) {
+                    registered_count += 1;
+                } else {
+                    debug!("Overriding plugin: {}", metadata.name);
+                }
                 plugin.register(&metadata.name.clone(), Rc::new(RefCell::new(metadata)));
             }
         }
