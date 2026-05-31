@@ -11,8 +11,8 @@ use logos::Logos;
 enum InnerToken {
     /// Single-quoted string — everything inside is literal.
     #[regex(r"'[^']*'", single_quoted)]
-    /// Double-quoted string — `\` escapes `"`, `\`, `$`, `` ` ``, `\n`.
-    #[regex(r#""([^"\\$`]|\\.)*""#, double_quoted)]
+    /// Double-quoted string — `\` escapes any following character.
+    #[regex(r#""([^"\\]|\\.)*""#, double_quoted)]
     Text(String),
 
     // ── multi-char operators (longest match wins) ──
@@ -66,17 +66,19 @@ fn double_quoted(lex: &logos::Lexer<InnerToken>) -> String {
     unescape_dq(inner)
 }
 
+/// POSIX double-quote backslash handling: `\` only escapes `$`, `` ` ``,
+/// `"`, `\`, and `<newline>`.  All other `\X` sequences are literal.
 fn unescape_dq(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     let mut chars = s.chars();
     while let Some(c) = chars.next() {
         if c == '\\' {
             match chars.next() {
-                Some(q @ '"') => result.push(q),
-                Some(bs @ '\\') => result.push(bs),
-                Some(d @ '$') => result.push(d),
-                Some(b @ '`') => result.push(b),
-                Some('n') => result.push('\n'),
+                Some('$') => result.push('$'),
+                Some('`') => result.push('`'),
+                Some('"') => result.push('"'),
+                Some('\\') => result.push('\\'),
+                Some('\n') => {} // line continuation — skip both
                 Some(other) => {
                     result.push('\\');
                     result.push(other);

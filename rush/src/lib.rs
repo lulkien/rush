@@ -1,30 +1,54 @@
-use std::{fs::File, path::PathBuf};
+use std::{fs, fs::File, path::PathBuf};
 
 use env_logger::{Builder, Env};
 use log::{debug, error};
 use rustyline::error::ReadlineError;
 
-use crate::{executor::Executor, input::InputHandler, lexer::Lexer};
+use crate::{executor::Executor, input::InputHandler};
+
 pub use rush_interface::ExecResult;
 
 pub mod env;
 pub mod executor;
 mod input;
-mod lexer;
+pub mod lexer;
+pub mod parser;
 pub mod plugin;
 pub mod shell_builtins;
 pub mod types;
 pub mod user;
 
-pub fn start_shell() -> anyhow::Result<()> {
-    // Init logger
+/// Parse and execute a string of shell source (used by REPL and scripts).
+pub fn execute_string(executor: &Executor, input: &str) -> anyhow::Result<ExecResult> {
+    let lexer = lexer::Lexer::new(input);
+    let tokens = lexer.tokenize();
+    let program = parser::parse(&tokens)?;
+    Ok(executor.execute_program(&program))
+}
+
+/// Initialise the shell runtime (logger, env, plugins, builtins).
+pub fn init_runtime() -> anyhow::Result<(user::UserDirectoryRegistry, Executor)> {
     Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let user_dirs = user::init_module()?;
     let env = env::init_module(&user_dirs)?;
-
     let executor =
         executor::init_module(shell_builtins::init_module()?, plugin::init_module(&env)?)?;
+
+    Ok((user_dirs, executor))
+}
+
+/// Run a shell script from a file.
+pub fn run_script(path: &str) -> anyhow::Result<()> {
+    let (_user_dirs, executor) = init_runtime()?;
+    let source = fs::read_to_string(path)?;
+    execute_string(&executor, &source)?;
+    Ok(())
+}
+
+/// Start the interactive REPL.
+pub fn start_shell() -> anyhow::Result<()> {
+    let (user_dirs, executor) = init_runtime()?;
 
     let mut input_handler = InputHandler::new()?;
 
@@ -36,7 +60,6 @@ pub fn start_shell() -> anyhow::Result<()> {
         )
     }
 
-    // Enter main loop
     enter_repl(&mut input_handler, &history_file, &executor)?;
 
     eprintln!("Bye bye");
@@ -50,7 +73,6 @@ fn enter_repl(
 ) -> anyhow::Result<()> {
     input_handler.load_history(history_file)?;
 
-    // Enter main loop
     loop {
         let prompt = executor
             .execute_command(types::Command::new("rush-prompt"))
@@ -62,15 +84,10 @@ fn enter_repl(
             Ok(line) => {
                 input_handler.add_history(&line)?;
 
-                let pipe_list = match Lexer::new(&line).parse_line() {
-                    Ok(list) => list,
-                    Err(e) => {
-                        eprintln!("{e}");
-                        continue;
-                    }
-                };
-
-                let _result = executor.execute_command_pipe_list(pipe_list);
+                match execute_string(executor, &line) {
+                    Ok(_) => {}
+                    Err(e) => eprintln!("rush: {e}"),
+                }
             }
             Err(ReadlineError::Interrupted) => {
                 eprintln!("^C");

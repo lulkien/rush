@@ -12,7 +12,6 @@ fn setup() -> Executor {
 }
 
 /// Run a pipe list and capture what gets written to stdout.
-/// We redirect stdout (fd 1) to a pipe and read it back.
 fn capture_stdout(executor: &Executor, pipe_list: CommandPipeList) -> String {
     use std::io::Read;
     use std::os::fd::FromRawFd;
@@ -26,10 +25,33 @@ fn capture_stdout(executor: &Executor, pipe_list: CommandPipeList) -> String {
     assert_ne!(unsafe { libc::dup2(w, libc::STDOUT_FILENO) }, -1, "dup2 failed");
     unsafe { libc::close(w); }
 
-    executor.execute_command_pipe_list(pipe_list);
+    // Build a Program from the flat pipe list and execute it.
+    let program = rush::types::Program {
+        items: pipe_list
+            .into_iter()
+            .map(|pipe| {
+                let commands: Vec<Command> = pipe.into_iter().collect();
+                rush::types::CompleteCommand {
+                    list: rush::types::AndOrList {
+                        first: rush::types::Pipeline {
+                            negation: false,
+                            commands,
+                        },
+                        rest: vec![],
+                    },
+                    background: false,
+                }
+            })
+            .collect(),
+    };
+    executor.execute_program(&program);
 
     // Restore stdout before reading
-    assert_ne!(unsafe { libc::dup2(saved_stdout, libc::STDOUT_FILENO) }, -1, "restore dup2 failed");
+    assert_ne!(
+        unsafe { libc::dup2(saved_stdout, libc::STDOUT_FILENO) },
+        -1,
+        "restore dup2 failed"
+    );
     unsafe { libc::close(saved_stdout); }
 
     let mut output = String::new();
@@ -39,19 +61,27 @@ fn capture_stdout(executor: &Executor, pipe_list: CommandPipeList) -> String {
     output
 }
 
+fn make_cmd(name: &str, args: &[&str]) -> Command {
+    let mut cmd = Command::new(name);
+    for a in args {
+        cmd.args.push((*a).into());
+    }
+    cmd
+}
+
+fn single_pipe_list(pipe: CommandPipe) -> CommandPipeList {
+    let mut list = CommandPipeList::new();
+    list.append_pipe(pipe);
+    list
+}
+
 #[test]
 fn test_echo_hello() {
     let executor = setup();
     let mut pipe = CommandPipe::new();
-    pipe.append_command(Command::new_with_args(
-        "echo".into(),
-        vec!["hello".into()].into(),
-    ));
+    pipe.append_command(make_cmd("echo", &["hello"]));
 
-    let mut list = CommandPipeList::new();
-    list.append_pipe(pipe);
-
-    let output = capture_stdout(&executor, list);
+    let output = capture_stdout(&executor, single_pipe_list(pipe));
     assert_eq!(output, "hello\n", "got: {output:?}");
 }
 
@@ -60,16 +90,10 @@ fn test_echo_hello_pipe_cat() {
     let executor = setup();
 
     let mut pipe = CommandPipe::new();
-    pipe.append_command(Command::new_with_args(
-        "echo".into(),
-        vec!["hello".into()].into(),
-    ));
-    pipe.append_command(Command::new("cat".into()));
+    pipe.append_command(make_cmd("echo", &["hello"]));
+    pipe.append_command(make_cmd("cat", &[]));
 
-    let mut list = CommandPipeList::new();
-    list.append_pipe(pipe);
-
-    let output = capture_stdout(&executor, list);
+    let output = capture_stdout(&executor, single_pipe_list(pipe));
     assert_eq!(output, "hello\n", "got: {output:?}");
 }
 
@@ -78,15 +102,9 @@ fn test_echo_no_trailing_newline() {
     let executor = setup();
 
     let mut pipe = CommandPipe::new();
-    pipe.append_command(Command::new_with_args(
-        "echo".into(),
-        vec!["-n".into(), "hello".into()].into(),
-    ));
+    pipe.append_command(make_cmd("echo", &["-n", "hello"]));
 
-    let mut list = CommandPipeList::new();
-    list.append_pipe(pipe);
-
-    let output = capture_stdout(&executor, list);
+    let output = capture_stdout(&executor, single_pipe_list(pipe));
     // echo -n produces "hello" (no \n). print_result adds one.
     assert_eq!(output, "hello\n", "got: {output:?}");
 }
@@ -96,17 +114,11 @@ fn test_pipe_three_commands() {
     let executor = setup();
 
     let mut pipe = CommandPipe::new();
-    pipe.append_command(Command::new_with_args(
-        "echo".into(),
-        vec!["hello".into()].into(),
-    ));
-    pipe.append_command(Command::new("cat".into()));
-    pipe.append_command(Command::new("cat".into()));
+    pipe.append_command(make_cmd("echo", &["hello"]));
+    pipe.append_command(make_cmd("cat", &[]));
+    pipe.append_command(make_cmd("cat", &[]));
 
-    let mut list = CommandPipeList::new();
-    list.append_pipe(pipe);
-
-    let output = capture_stdout(&executor, list);
+    let output = capture_stdout(&executor, single_pipe_list(pipe));
     // echo → cat → cat: should still be exactly "hello\n"
     assert_eq!(output, "hello\n", "got: {output:?}");
 }
@@ -116,18 +128,10 @@ fn test_pipe_with_echo_n() {
     let executor = setup();
 
     let mut pipe = CommandPipe::new();
-    pipe.append_command(Command::new_with_args(
-        "echo".into(),
-        vec!["-n".into(), "hello".into()].into(),
-    ));
-    pipe.append_command(Command::new("cat".into()));
+    pipe.append_command(make_cmd("echo", &["-n", "hello"]));
+    pipe.append_command(make_cmd("cat", &[]));
 
-    let mut list = CommandPipeList::new();
-    list.append_pipe(pipe);
-
-    let output = capture_stdout(&executor, list);
-    // echo -n produces "hello" (no \n), print_result adds one → pipe gets "hello\n"
-    // cat reads "hello\n", returns it, print_result adds nothing (already ends with \n)
+    let output = capture_stdout(&executor, single_pipe_list(pipe));
     assert_eq!(output, "hello\n", "got: {output:?}");
 }
 
@@ -136,15 +140,8 @@ fn test_echo_empty() {
     let executor = setup();
 
     let mut pipe = CommandPipe::new();
-    pipe.append_command(Command::new_with_args(
-        "echo".into(),
-        vec!["-n".into()].into(),
-    ));
+    pipe.append_command(make_cmd("echo", &["-n"]));
 
-    let mut list = CommandPipeList::new();
-    list.append_pipe(pipe);
-
-    let output = capture_stdout(&executor, list);
-    // echo -n with no args produces empty message. print_result writes nothing.
+    let output = capture_stdout(&executor, single_pipe_list(pipe));
     assert_eq!(output, "", "got: {output:?}");
 }

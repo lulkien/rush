@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use crate::lexer::token::{Token, tokenize_with_logos};
 use crate::types::{Command, CommandPipe, CommandPipeList, Redirect};
 
-mod token;
+pub mod token;
 
 pub struct Lexer {
     input: String,
@@ -17,7 +17,7 @@ impl Lexer {
         }
     }
 
-    fn tokenize(&self) -> Vec<Token> {
+    pub fn tokenize(&self) -> Vec<Token> {
         tokenize_with_logos(&self.input)
     }
 
@@ -167,7 +167,7 @@ fn flush_command(
     cmd: &mut Option<RString>,
     args: &mut RVec<RString>,
     redirects: &mut Vec<Redirect>,
-    background: bool,
+    _background: bool,
     pipe: &mut CommandPipe,
 ) {
     if let Some(name) = cmd.take() {
@@ -175,7 +175,7 @@ fn flush_command(
             name,
             args: std::mem::take(args),
             redirects: std::mem::take(redirects),
-            background,
+            kind: Default::default(),
         };
         pipe.append_command(command);
     }
@@ -289,9 +289,10 @@ mod tests {
 
     #[test]
     fn double_quote_newline_escape() {
+        // POSIX: \n inside double quotes is literal \ and n
         let lexer = Lexer::new("echo \"hello\\nworld\"");
         let tokens = token_strings(&lexer);
-        assert_eq!(tokens, vec!["echo", "hello\nworld"]);
+        assert_eq!(tokens, vec!["echo", "hello\\nworld"]);
     }
 
     #[test]
@@ -482,7 +483,9 @@ mod tests {
             .flat_map(|pipe| pipe.into_iter().collect::<Vec<_>>())
             .collect();
         assert_eq!(commands.len(), 1);
-        assert!(commands[0].background);
+        assert_eq!(commands[0].name.as_str(), "sleep");
+        // background is tracked at the AST level (CompleteCommand);
+        // the flat parse_line representation does not preserve it.
     }
 
     #[test]

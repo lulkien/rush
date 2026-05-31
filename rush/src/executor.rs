@@ -10,7 +10,7 @@ use rush_interface::ExecResult;
 use crate::{
     plugin::PluginRegistry,
     shell_builtins::BuiltinsRegistry,
-    types::{Command, CommandPipeList, DashRegistry},
+    types::{Command, CommandKind, DashRegistry, Program},
 };
 
 enum ExecutionFrom {
@@ -34,26 +34,70 @@ impl Executor {
         }
     }
 
-    /// Execute a list of semicolon-separated pipe groups.
-    /// Single-command groups run in-process.
-    /// Multi-command groups fork N children connected by N-1 Unix pipes.
-    pub fn execute_command_pipe_list(&self, pipes: CommandPipeList) -> ExecResult {
+    /// Execute a parsed program (top-level AST entry point).
+    pub fn execute_program(&self, program: &Program) -> ExecResult {
         let mut last_result = ExecResult::default();
 
-        for pipe in pipes {
-            let commands: Vec<Command> = pipe.into_iter().collect();
-            last_result = match commands.len() {
-                0 => ExecResult::default(),
-                1 => {
-                    let result = self.execute_single(commands.into_iter().next().unwrap());
-                    print_result(&result);
-                    result
+        for item in &program.items {
+            if item.background {
+                // TODO: background execution (fork + don't wait)
+                eprintln!("rush: background execution not yet implemented");
+            }
+
+            // Walk the and-or list
+            let list = &item.list;
+            last_result = self.execute_pipeline(&list.first);
+
+            for (op, pipeline) in &list.rest {
+                let success = last_result.code == 0;
+                let should_run = match op {
+                    crate::types::AndOr::And => success,
+                    crate::types::AndOr::Or => !success,
+                };
+                if should_run {
+                    last_result = self.execute_pipeline(pipeline);
                 }
-                _ => self.execute_pipe_forked(commands),
-            };
+            }
         }
 
         last_result
+    }
+
+    /// Execute a single pipeline.
+    fn execute_pipeline(&self, pipeline: &crate::types::Pipeline) -> ExecResult {
+        // Collect simple commands from the pipeline
+        let commands: Vec<&Command> = pipeline.commands.iter().collect();
+
+        if commands.is_empty() {
+            return ExecResult::default();
+        }
+
+        match commands.len() {
+            1 => {
+                let cmd = commands[0];
+                match &cmd.kind {
+                    CommandKind::Simple => {
+                        let result = self.execute_single(cmd.clone());
+                        // Only print for non-compound commands
+                        if cmd.redirects.is_empty() {
+                            print_result(&result);
+                        }
+                        result
+                    }
+                    _ => {
+                        eprintln!(
+                            "rush: compound commands not yet implemented in executor"
+                        );
+                        ExecResult::new(1, "")
+                    }
+                }
+            }
+            _ => {
+                // Multi-command pipeline: fork children
+                let owned: Vec<Command> = commands.into_iter().cloned().collect();
+                self.execute_pipe_forked(owned)
+            }
+        }
     }
 
     /// Run a single command in-process (no fork).
@@ -64,6 +108,10 @@ impl Executor {
 
     /// Look up and execute a single command via the registry.
     fn execute_single(&self, command: Command) -> ExecResult {
+        if command.name.is_empty() {
+            return ExecResult::default();
+        }
+
         if let Some(cache_entry) = self.entry_point_cache.get(command.name.as_str()) {
             return match cache_entry.value() {
                 ExecutionFrom::Builtin => self.builtin_reg.execute(command),
