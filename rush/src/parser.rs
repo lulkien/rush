@@ -61,10 +61,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_at_end(&self) -> bool {
-        match self.peek() {
-            None | Some(Token::Eof) => true,
-            _ => false,
-        }
+        matches!(self.peek(), None | Some(Token::Eof))
     }
 
     /// True if the next token is a reserved word that closes a compound
@@ -90,17 +87,15 @@ impl<'a> Parser<'a> {
     fn skip_separators(&mut self) {
         while self.is_separator() {
             // If stopping at ;;, only consume single semicolons.
-            if self.stop_at_dsemi {
-                if let Some(Token::Semicolon) = self.peek() {
-                    self.advance();
-                    // Peek at the next — if it's also `;`, this is `;;`.
-                    // Put it back by retreating one position.
-                    if matches!(self.peek(), Some(Token::Semicolon)) {
-                        self.pos -= 1;
-                        break;
-                    }
-                    continue;
+            if self.stop_at_dsemi
+                && let Some(Token::Semicolon) = self.peek()
+            {
+                self.advance();
+                if matches!(self.peek(), Some(Token::Semicolon)) {
+                    self.pos -= 1;
+                    break;
                 }
+                continue;
             }
             // Normal mode: consume all separators
             self.advance();
@@ -241,10 +236,9 @@ impl<'a> Parser<'a> {
             return self.parse_compound_command();
         }
 
-        // Check for subshell / brace group by opening delimiter
-        match self.peek() {
-            Some(Token::OpenParen) => return self.parse_compound_command(),
-            _ => {}
+        // Check for subshell by opening paren
+        if let Some(Token::OpenParen) = self.peek() {
+            return self.parse_compound_command();
         }
 
         self.parse_simple_command()
@@ -403,7 +397,7 @@ impl<'a> Parser<'a> {
     // ── while / until ────────────────────────────────────────────
 
     fn parse_while_clause(&mut self) -> anyhow::Result<Command> {
-        let is_until = match self.peek() {
+        let _is_until = match self.peek() {
             Some(Token::Ident(s)) if s == "until" => {
                 self.advance();
                 true
@@ -422,11 +416,7 @@ impl<'a> Parser<'a> {
         let clause = WhileClause { condition, body };
 
         Ok(Command {
-            kind: if is_until {
-                CommandKind::While(clause) // TODO: distinguish While vs Until
-            } else {
-                CommandKind::While(clause)
-            },
+            kind: CommandKind::While(clause), // TODO: distinguish While vs Until
             ..Default::default()
         })
     }
@@ -492,13 +482,11 @@ impl<'a> Parser<'a> {
 
         let mut arms = Vec::new();
         loop {
-            if self.peek_is_reserved() {
-                if let Some(Token::Ident(s)) = self.peek() {
-                    if s == "esac" {
+            if self.peek_is_reserved()
+                && let Some(Token::Ident(s)) = self.peek()
+                    && s == "esac" {
                         break;
                     }
-                }
-            }
             if self.is_at_end() {
                 return Err(anyhow::anyhow!("expected 'esac', found end of input"));
             }
@@ -540,15 +528,13 @@ impl<'a> Parser<'a> {
                     continue;
                 }
                 // Stop on reserved words that end the case
-                if self.peek_is_reserved() {
-                    if let Some(Token::Ident(s)) = self.peek() {
-                        if s == "esac" || s == "fi" || s == "done" || s == "elif"
-                            || s == "else" || s == "then" || s == "do"
+                if self.peek_is_reserved()
+                    && let Some(Token::Ident(s)) = self.peek()
+                        && (s == "esac" || s == "fi" || s == "done" || s == "elif"
+                            || s == "else" || s == "then" || s == "do")
                         {
                             break;
                         }
-                    }
-                }
                 if self.is_at_end() {
                     break;
                 }

@@ -209,6 +209,7 @@ pub(super) fn tokenize_with_logos(input: &str) -> Vec<Token> {
 }
 
 /// Keyword lookup (currently a no-op stub for future keyword support).
+#[allow(dead_code)]
 pub(super) fn get_keyword_token(_ident: &str) -> anyhow::Result<Token> {
     Err(anyhow::anyhow!("Not a keyword"))
 }
