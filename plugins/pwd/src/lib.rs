@@ -23,10 +23,10 @@ pub fn plugin_help() -> RString {
 }
 
 #[execute]
-pub fn execute(_args: RVec<RString>) -> ExecResult {
+pub fn execute(_args: RVec<RString>) -> CommandResult {
     match env::current_dir() {
-        Ok(path) => ExecResult::new(0, &path.to_string_lossy()),
-        Err(e) => ExecResult::new(1, &e.to_string()),
+        Ok(path) => CommandResult::new(0, &path.to_string_lossy()),
+        Err(e) => CommandResult::new(1, &e.to_string()),
     }
 }
 

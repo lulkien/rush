@@ -12,7 +12,7 @@ pub fn load(_attr: TokenStream, item: TokenStream) -> TokenStream {
         fn ffi_internal_init_root_module() -> ::rush_plugin::rush_interface::CommandRef {
             use ::abi_stable::prefix_type::PrefixTypeTrait;
 
-            ::rush_plugin::rush_interface::Command {
+            ::rush_plugin::rush_interface::Module {
                 load: rush_internal_load,
                 plugin_name: rush_internal_plugin_name,
                 plugin_desc: rush_internal_plugin_desc,
@@ -105,7 +105,7 @@ pub fn execute(_attr: TokenStream, item: TokenStream) -> TokenStream {
     quote! {
         #[::abi_stable::sabi_extern_fn]
         fn rush_internal_execute(
-            args: ::abi_stable::std_types::RVec<::abi_stable::std_types::RString>) -> ::rush_plugin::rush_interface::ExecResult {
+            args: ::abi_stable::std_types::RVec<::abi_stable::std_types::RString>) -> ::rush_plugin::rush_interface::CommandResult {
             #function
 
             #fn_name(args)

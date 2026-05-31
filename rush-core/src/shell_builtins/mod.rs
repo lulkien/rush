@@ -4,7 +4,7 @@ use abi_stable::std_types::{RString, RVec};
 use anyhow::anyhow;
 use dashmap::{DashMap, try_result::TryResult};
 use log::warn;
-use rush_interface::ExecResult;
+use rush_interface::CommandResult;
 
 use crate::types::{Command, DashRegistry};
 
@@ -16,7 +16,7 @@ pub trait BuiltinCommand: Send + Sync {
     fn print_desc(&self);
     fn print_help(&self);
     fn print_version(&self);
-    fn execute(&self, args: RVec<RString>) -> ExecResult;
+    fn execute(&self, args: RVec<RString>) -> CommandResult;
 }
 
 type RegistryTypeRaw = Box<dyn BuiltinCommand>;
@@ -51,13 +51,13 @@ impl DashRegistry<RegistryTypeRaw> for BuiltinsRegistry {
 }
 
 impl BuiltinsRegistry {
-    pub fn execute(&self, command: Command) -> ExecResult {
+    pub fn execute(&self, command: Command) -> CommandResult {
         match self.get(&command.name) {
             Ok(command_entry) => command_entry
                 .as_ref()
                 .borrow()
                 .execute(command.args),
-            Err(e) => ExecResult::new(1, format!("{e}").as_str()),
+            Err(e) => CommandResult::new(1, format!("{e}").as_str()),
         }
     }
 

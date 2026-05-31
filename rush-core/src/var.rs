@@ -36,7 +36,7 @@ impl VarStore {
     }
 
     /// Update the `$?` exit code.
-    pub fn set_exit_code(&self, code: u8) {
+    pub fn set_exit_code(&self, code: i32) {
         self.set("?", vec![code.to_string()]);
     }
 

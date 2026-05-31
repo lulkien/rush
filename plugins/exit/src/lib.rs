@@ -33,16 +33,16 @@ Examples:\n\
 }
 
 #[execute]
-pub fn execute(args: RVec<RString>) -> ExecResult {
+pub fn execute(args: RVec<RString>) -> CommandResult {
     match args.as_slice() {
         [] => std::process::exit(0),
 
         [param] => match param.as_str() {
-            "-h" | "--help" => ExecResult {
+            "-h" | "--help" => CommandResult {
                 code: 255,
                 message: rush_internal_plugin_help(),
             },
-            "-v" | "--version" => ExecResult {
+            "-v" | "--version" => CommandResult {
                 code: 255,
                 message: rush_internal_plugin_version(),
             },
@@ -50,11 +50,11 @@ pub fn execute(args: RVec<RString>) -> ExecResult {
                 .parse::<u8>()
                 .map(|val| std::process::exit(val as i32))
                 .unwrap_or_else(|_| {
-                    ExecResult::new(255, &format!("exit: expected u8, found {param}"))
+                    CommandResult::new(255, &format!("exit: expected u8, found {param}"))
                 }),
         },
 
-        _ => ExecResult::new(
+        _ => CommandResult::new(
             2,
             &format!(
                 "exit: expected [0-1] argument, found {}",

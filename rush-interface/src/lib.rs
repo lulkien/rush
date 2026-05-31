@@ -10,24 +10,24 @@ use abi_stable::{
 #[derive(StableAbi)]
 #[sabi(kind(Prefix(prefix_ref = CommandRef)))]
 #[sabi(missing_field(panic))]
-pub struct Command {
+pub struct Module {
     pub load: extern "C" fn(),
     pub plugin_name: extern "C" fn() -> RString,
     pub plugin_help: extern "C" fn() -> RString,
     pub plugin_desc: extern "C" fn() -> RString,
     pub plugin_version: extern "C" fn() -> RString,
-    pub execute: extern "C" fn(RVec<RString>) -> ExecResult,
+    pub execute: extern "C" fn(RVec<RString>) -> CommandResult,
 }
 
 #[repr(C)]
 #[derive(StableAbi, Debug, Clone, Default)]
-pub struct ExecResult {
-    pub code: u8,
+pub struct CommandResult {
+    pub code: i32,
     pub message: RString,
 }
 
-impl ExecResult {
-    pub fn new(code: u8, message: &str) -> Self {
+impl CommandResult {
+    pub fn new(code: i32, message: &str) -> Self {
         Self {
             code,
             message: message.into(),
@@ -35,7 +35,7 @@ impl ExecResult {
     }
 
     pub fn ok() -> Self {
-        ExecResult::default()
+        CommandResult::default()
     }
 }
 

@@ -1,7 +1,7 @@
 //! Builtin `history-search` — interactive fuzzy history search via skim TUI.
 
 use abi_stable::std_types::{RString, RVec};
-use rush_interface::ExecResult;
+use rush_interface::CommandResult;
 
 use super::BuiltinCommand;
 
@@ -30,10 +30,10 @@ impl BuiltinCommand for Command {
         eprintln!("{}", env!("CARGO_PKG_VERSION"));
     }
 
-    fn execute(&self, _args: RVec<RString>) -> ExecResult {
+    fn execute(&self, _args: RVec<RString>) -> CommandResult {
         // This builtin is special — the REPL loop detects it and handles
         // it by calling the InputHandler's history_search method.
         // When reached via the normal executor path, just print a message.
-        ExecResult::new(0, "history-search: use Ctrl+R in interactive mode")
+        CommandResult::new(0, "history-search: use Ctrl+R in interactive mode")
     }
 }

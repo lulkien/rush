@@ -1,7 +1,7 @@
 use std::process;
 
 use abi_stable::std_types::{RString, RVec};
-use rush_interface::ExecResult;
+use rush_interface::CommandResult;
 
 use super::{BuiltinCommand, shared::INVALID_ARGS};
 
@@ -53,28 +53,28 @@ impl BuiltinCommand for Command {
         eprintln!("{}", env!("CARGO_PKG_VERSION"));
     }
 
-    fn execute(&self, args: RVec<RString>) -> ExecResult {
+    fn execute(&self, args: RVec<RString>) -> CommandResult {
         match args.as_slice() {
             [] => process::exit(0),
 
             [param] => match param.as_str() {
                 "-h" => {
                     self.print_help();
-                    ExecResult::ok()
+                    CommandResult::ok()
                 }
                 "-v" => {
                     self.print_version();
-                    ExecResult::ok()
+                    CommandResult::ok()
                 }
                 _ => param
                     .parse::<u8>()
                     .map(|val| process::exit(val as i32))
                     .unwrap_or_else(|_| {
-                        ExecResult::new(255, &format!("{BUILTIN_NAME}: expected u8, found {param}"))
+                        CommandResult::new(255, &format!("{BUILTIN_NAME}: expected u8, found {param}"))
                     }),
             },
 
-            _ => ExecResult::new(
+            _ => CommandResult::new(
                 INVALID_ARGS,
                 &format!(
                     "{BUILTIN_NAME}: expected [0-1] argument, found {}",

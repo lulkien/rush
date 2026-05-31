@@ -12,7 +12,7 @@ use nix::{
     },
     unistd::{ForkResult, Pid, fork, pipe, write},
 };
-use rush_interface::ExecResult;
+use rush_interface::CommandResult;
 
 use crate::{
     plugin::PluginRegistry,
@@ -43,8 +43,8 @@ impl Executor {
         }
     }
 
-    pub fn execute_program(&self, program: &Program) -> ExecResult {
-        let mut last_result = ExecResult::default();
+    pub fn execute_program(&self, program: &Program) -> CommandResult {
+        let mut last_result = CommandResult::default();
 
         for item in &program.items {
             if item.background {
@@ -69,11 +69,11 @@ impl Executor {
         last_result
     }
 
-    pub(crate) fn execute_pipeline(&self, pipeline: &crate::types::Pipeline) -> ExecResult {
+    pub(crate) fn execute_pipeline(&self, pipeline: &crate::types::Pipeline) -> CommandResult {
         let commands: Vec<&Command> = pipeline.commands.iter().collect();
 
         if commands.is_empty() {
-            return ExecResult::default();
+            return CommandResult::default();
         }
 
         match commands.len() {
@@ -91,7 +91,7 @@ impl Executor {
                         eprintln!(
                             "rush: compound commands not yet implemented in executor"
                         );
-                        ExecResult::new(1, "")
+                        CommandResult::new(1, "")
                     }
                 }
             }
@@ -102,7 +102,7 @@ impl Executor {
         }
     }
 
-    pub fn execute_command(&self, command: Command) -> ExecResult {
+    pub fn execute_command(&self, command: Command) -> CommandResult {
         self.execute_single(command)
     }
 
@@ -115,16 +115,16 @@ impl Executor {
         names
     }
 
-    fn execute_single(&self, command: Command) -> ExecResult {
+    fn execute_single(&self, command: Command) -> CommandResult {
         if command.name.is_empty() {
-            return ExecResult::default();
+            return CommandResult::default();
         }
 
         match self.resolve(&command.name) {
             ExecutionFrom::Builtin => self.builtin_reg.execute(command),
             ExecutionFrom::Plugin => self.plugin_reg.execute(command),
             ExecutionFrom::External(_path) => self.execute_external_single(command),
-            ExecutionFrom::NotFound => ExecResult::new(
+            ExecutionFrom::NotFound => CommandResult::new(
                 127,
                 format!("{}: command not found", command.name.as_str()).as_str(),
             ),
@@ -153,7 +153,7 @@ impl Executor {
     }
 
     /// Fork and exec an external command (single-command, no pipe).
-    fn execute_external_single(&self, command: Command) -> ExecResult {
+    fn execute_external_single(&self, command: Command) -> CommandResult {
         let (prog, argv) = build_argv(&command);
         let argv_refs: Vec<&std::ffi::CStr> = argv.iter().map(|s| s.as_c_str()).collect();
 
@@ -169,13 +169,13 @@ impl Executor {
                 std::process::exit(127);
             }
             Ok(ForkResult::Parent { child }) => match waitpid(child, None) {
-                Ok(WaitStatus::Exited(_, code)) => ExecResult::new(code as u8, ""),
+                Ok(WaitStatus::Exited(_, code)) => CommandResult::new(code, ""),
                 Ok(WaitStatus::Signaled(_, sig, _)) => {
-                    ExecResult::new(128 + sig as u8, "")
+                    CommandResult::new(128 + sig as i32, "")
                 }
-                _ => ExecResult::new(1, ""),
+                _ => CommandResult::new(1, ""),
             },
-            Err(e) => ExecResult::new(1, &format!("fork() failed: {e}")),
+            Err(e) => CommandResult::new(1, &format!("fork() failed: {e}")),
         }
     }
 
@@ -194,7 +194,7 @@ impl Executor {
         std::process::exit(127);
     }
 
-    fn execute_pipe_forked(&self, commands: Vec<Command>) -> ExecResult {
+    fn execute_pipe_forked(&self, commands: Vec<Command>) -> CommandResult {
         let n = commands.len();
 
         let mut pipes: Vec<(OwnedFd, OwnedFd)> = Vec::with_capacity(n.saturating_sub(1));
@@ -206,7 +206,7 @@ impl Executor {
                     pipes.push((r, w));
                 }
                 Err(e) => {
-                    return ExecResult::new(1, &format!("pipe() failed: {e}"));
+                    return CommandResult::new(1, &format!("pipe() failed: {e}"));
                 }
             }
         }
@@ -248,11 +248,11 @@ impl Executor {
 
                     let result = self.lookup_and_execute(commands[i].clone());
                     print_result(&result);
-                    std::process::exit(result.code as i32);
+                    std::process::exit(result.code);
                 }
                 Ok(ForkResult::Parent { child }) => pids.push(child),
                 Err(e) => {
-                    return ExecResult::new(1, &format!("fork() failed: {e}"));
+                    return CommandResult::new(1, &format!("fork() failed: {e}"));
                 }
             }
         }
@@ -266,16 +266,16 @@ impl Executor {
             }
         }
 
-        ExecResult::new(last_code as u8, "")
+        CommandResult::new(last_code, "")
     }
 
     /// Lookup and execute a builtin or plugin (no PATH search).
     /// Used by pipe children when the command is not external.
-    fn lookup_and_execute(&self, command: Command) -> ExecResult {
+    fn lookup_and_execute(&self, command: Command) -> CommandResult {
         match self.resolve(&command.name) {
             ExecutionFrom::Builtin => self.builtin_reg.execute(command),
             ExecutionFrom::Plugin => self.plugin_reg.execute(command),
-            _ => ExecResult::new(
+            _ => CommandResult::new(
                 127,
                 format!("{}: command not found", command.name.as_str()).as_str(),
             ),
@@ -326,7 +326,7 @@ fn write_all(fd: RawFd, mut data: &[u8]) {
     }
 }
 
-fn print_result(result: &ExecResult) {
+fn print_result(result: &CommandResult) {
     let fd: RawFd = if result.code == 0 { 1 } else { 2 };
     if !result.message.is_empty() {
         let msg = result.message.as_bytes();

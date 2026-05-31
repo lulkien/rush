@@ -122,7 +122,7 @@ impl PromptBuilder {
 }
 
 #[execute]
-pub fn execute(_args: RVec<RString>) -> ExecResult {
+pub fn execute(_args: RVec<RString>) -> CommandResult {
     let username = get_username().clone();
     let hostname = get_hostname().clone();
     let home_path = dirs::home_dir();
@@ -181,7 +181,7 @@ pub fn execute(_args: RVec<RString>) -> ExecResult {
     let indicator = if is_root { "#" } else { "$" };
     prompt.add_with_format(|| Some(indicator.to_string()), |ind| ind.to_string());
 
-    ExecResult::new(0, &prompt.build())
+    CommandResult::new(0, &prompt.build())
 }
 
 #[load]

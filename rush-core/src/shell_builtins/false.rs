@@ -1,5 +1,5 @@
 use abi_stable::std_types::{RString, RVec};
-use rush_interface::ExecResult;
+use rush_interface::CommandResult;
 
 use super::{BuiltinCommand, shared::EXIT_FAILURE};
 
@@ -28,19 +28,19 @@ impl BuiltinCommand for Command {
         eprintln!("{}", env!("CARGO_PKG_VERSION"));
     }
 
-    fn execute(&self, args: RVec<RString>) -> ExecResult {
+    fn execute(&self, args: RVec<RString>) -> CommandResult {
         if let Some(arg) = args.iter().next() {
             match arg.as_str() {
                 "-h" | "--help" => {
                     self.print_help();
-                    return ExecResult::ok();
+                    return CommandResult::ok();
                 }
                 "-v" | "--version" => {
                     self.print_version();
-                    return ExecResult::ok();
+                    return CommandResult::ok();
                 }
                 _ => {
-                    return ExecResult::new(
+                    return CommandResult::new(
                         255,
                         &format!("{BUILTIN_NAME}: unexpected argument '{arg}'"),
                     );
@@ -48,6 +48,6 @@ impl BuiltinCommand for Command {
             }
         }
         // No args → failure, no output.
-        ExecResult::new(EXIT_FAILURE, "")
+        CommandResult::new(EXIT_FAILURE, "")
     }
 }

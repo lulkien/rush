@@ -92,19 +92,19 @@ Escape sequences:
 }
 
 #[execute]
-pub fn execute(args: RVec<RString>) -> ExecResult {
+pub fn execute(args: RVec<RString>) -> CommandResult {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
 
     // Check for help/version flags first
     for arg in &args {
         if arg == "--help" || arg == "-h" {
-            return ExecResult {
+            return CommandResult {
                 code: 255,
                 message: rush_internal_plugin_help(),
             };
         }
         if arg == "--version" || arg == "-v" {
-            return ExecResult {
+            return CommandResult {
                 code: 255,
                 message: rush_internal_plugin_version(),
             };
@@ -129,7 +129,7 @@ pub fn execute(args: RVec<RString>) -> ExecResult {
         output.push('\n');
     }
 
-    ExecResult::new(0, &output)
+    CommandResult::new(0, &output)
 }
 
 #[load]

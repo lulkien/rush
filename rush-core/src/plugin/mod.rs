@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use anyhow::anyhow;
 use dashmap::{DashMap, try_result::TryResult};
-use rush_interface::ExecResult;
+use rush_interface::CommandResult;
 
 pub use crate::plugin::metadata::PluginMetadata;
 use crate::{env::EnvRegistry, types::{Command, DashRegistry}};
@@ -40,10 +40,10 @@ impl DashRegistry<RegistryTypeRaw> for PluginRegistry {
 }
 
 impl PluginRegistry {
-    pub fn execute(&self, command: Command) -> ExecResult {
+    pub fn execute(&self, command: Command) -> CommandResult {
         let plugin_metadata = match self.get(&command.name) {
             Ok(metadata) => metadata,
-            Err(e) => return ExecResult::new(1, format!("{e}").as_str()),
+            Err(e) => return CommandResult::new(1, format!("{e}").as_str()),
         };
 
         let mut metadata_ref = plugin_metadata.as_ref().borrow_mut();
@@ -52,7 +52,7 @@ impl PluginRegistry {
             let plugin = match lazy::load_plugin(&metadata_ref.path) {
                 Some(p) => p,
                 None => {
-                    return ExecResult::new(
+                    return CommandResult::new(
                         1,
                         format!("{}: plugin failed to load", command.name).as_str(),
                     );

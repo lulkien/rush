@@ -7,7 +7,7 @@ use env_logger::{Builder, Env};
 
 use crate::executor::Executor;
 use crate::var::VarStore;
-pub use rush_interface::ExecResult;
+pub use rush_interface::CommandResult;
 
 pub mod env;
 pub mod executor;
@@ -57,14 +57,14 @@ pub fn execute_string(
     executor: &Executor,
     vars: &var::VarStore,
     input: &str,
-) -> anyhow::Result<ExecResult> {
+) -> anyhow::Result<CommandResult> {
     let lexer = lexer::Lexer::new(input);
     let tokens = lexer.tokenize();
     let mut program = parser::parse(&tokens)?;
 
     preprocess(&mut program, vars);
 
-    let mut last_result = ExecResult::default();
+    let mut last_result = CommandResult::default();
     for item in &mut program.items {
         expand_complete_command(item, vars);
 
