@@ -3,6 +3,7 @@
 //! This crate provides everything needed to parse and execute shell commands.
 //! The `rush` binary adds the interactive REPL on top.
 
+use std::rc::Rc;
 use env_logger::{Builder, Env};
 
 use crate::executor::Executor;
@@ -143,14 +144,14 @@ fn split_assignment(word: &str) -> Option<(String, String)> {
 }
 
 /// Initialise the shell runtime (logger, env, plugins, builtins, vars).
-pub fn init_runtime() -> anyhow::Result<(user::UserDirectoryRegistry, Executor, var::VarStore)> {
+pub fn init_runtime() -> anyhow::Result<(user::UserDirectoryRegistry, Executor, Rc<var::VarStore>)> {
     Builder::from_env(Env::default().default_filter_or("info")).init();
 
     let user_dirs = user::init_module()?;
     let env = env::init_module(&user_dirs)?;
-    let vars = var::VarStore::default();
+    let vars = Rc::new(var::VarStore::default());
     let executor =
-        executor::init_module(shell_builtins::init_module()?, plugin::init_module(&env)?)?;
+        executor::init_module(shell_builtins::init_module()?, plugin::init_module(&env)?, Rc::clone(&vars))?;
 
     for (key, value) in std::env::vars() {
         vars.set_colon(&key, &value);

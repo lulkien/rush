@@ -2,6 +2,7 @@ use std::ffi::CString;
 use std::os::fd::{BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use dashmap::DashMap;
 use nix::{
@@ -18,6 +19,7 @@ use crate::{
     plugin::PluginRegistry,
     shell_builtins::BuiltinsRegistry,
     types::{Command, CommandKind, DashRegistry, Program},
+    var::VarStore,
 };
 
 #[derive(Clone)]
@@ -32,14 +34,20 @@ pub struct Executor {
     builtin_reg: BuiltinsRegistry,
     plugin_reg: PluginRegistry,
     entry_point_cache: DashMap<String, ExecutionFrom>,
+    vars: Rc<VarStore>,
 }
 
 impl Executor {
-    pub fn new(builtin_reg: BuiltinsRegistry, plugin_reg: PluginRegistry) -> Self {
+    pub fn new(
+        builtin_reg: BuiltinsRegistry,
+        plugin_reg: PluginRegistry,
+        vars: Rc<VarStore>,
+    ) -> Self {
         Self {
             builtin_reg,
             plugin_reg,
             entry_point_cache: DashMap::default(),
+            vars,
         }
     }
 
@@ -166,7 +174,7 @@ impl Executor {
             ExecutionFrom::Plugin
         } else if self.builtin_reg.contains(name) {
             ExecutionFrom::Builtin
-        } else if let Some(path) = find_in_path(name) {
+        } else if let Some(path) = self.find_in_path(name) {
             ExecutionFrom::External(path)
         } else {
             ExecutionFrom::NotFound
@@ -177,21 +185,53 @@ impl Executor {
         result
     }
 
+    /// Search PATH for an executable (uses shell's PATH, falls back to process PATH).
+    fn find_in_path(&self, name: &str) -> Option<PathBuf> {
+        let path_var = self.vars.expand("PATH");
+        let path_var = if path_var.is_empty() {
+            std::env::var("PATH").ok()?
+        } else {
+            path_var
+        };
+        for dir in path_var.split(':') {
+            if dir.is_empty() {
+                continue;
+            }
+            let candidate = PathBuf::from(dir).join(name);
+            if let Ok(meta) = std::fs::metadata(&candidate)
+                && meta.is_file()
+                && meta.permissions().mode() & 0o111 != 0
+            {
+                return Some(candidate);
+            }
+        }
+        None
+    }
+
     /// Fork and exec an external command (single-command, no pipe).
     fn execute_external_single(&self, command: Command) -> CommandResult {
-        let (prog, argv) = build_argv(&command);
+        let (_prog, argv) = build_argv(&command);
         let argv_refs: Vec<&std::ffi::CStr> = argv.iter().map(|s| s.as_c_str()).collect();
+        let envp = self.vars.build_env_array();
 
         // SAFETY: single-threaded; child exits or execs immediately.
         match unsafe { fork() } {
             Ok(ForkResult::Child) => {
-                // Reset SIGINT to default so Ctrl+C kills this child.
                 let sa = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
                 let _ = unsafe { sigaction(Signal::SIGINT, &sa) };
 
                 apply_redirects_for_child(&command.redirects);
-                let _ = nix::unistd::execvp(&prog, &argv_refs);
-                // execvp only returns on error
+
+                // Look up cached path for execve.
+                if let Some(entry) = self.entry_point_cache.get(command.name.as_str()) {
+                    if let ExecutionFrom::External(ref p) = *entry.value() {
+                        if let Ok(path_cstr) = CString::new(p.to_str().unwrap_or("")) {
+                            let envp_refs: Vec<&std::ffi::CStr> =
+                                envp.iter().map(|s| s.as_c_str()).collect();
+                            let _ = nix::unistd::execve(&path_cstr, &argv_refs, &envp_refs);
+                        }
+                    }
+                }
                 std::process::exit(127);
             }
             Ok(ForkResult::Parent { child }) => match waitpid(child, None) {
@@ -206,16 +246,24 @@ impl Executor {
     /// Execute an external command in the current process (used in pipe children).
     /// Never returns — either execs successfully or exits with 127.
     fn exec_external(&self, command: &Command) -> ! {
-        let (prog, argv) = build_argv(command);
+        let (_prog, argv) = build_argv(command);
         let argv_refs: Vec<&std::ffi::CStr> = argv.iter().map(|s| s.as_c_str()).collect();
+        let envp = self.vars.build_env_array();
 
-        // Reset SIGINT to default.
         let sa = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
         let _ = unsafe { sigaction(Signal::SIGINT, &sa) };
 
-                apply_redirects_for_child(&command.redirects);
-        let _ = nix::unistd::execvp(&prog, &argv_refs);
-        // execvp only returns on error
+        apply_redirects_for_child(&command.redirects);
+
+        if let Some(entry) = self.entry_point_cache.get(command.name.as_str()) {
+            if let ExecutionFrom::External(ref p) = *entry.value() {
+                if let Ok(path_cstr) = CString::new(p.to_str().unwrap_or("")) {
+                    let envp_refs: Vec<&std::ffi::CStr> =
+                        envp.iter().map(|s| s.as_c_str()).collect();
+                    let _ = nix::unistd::execve(&path_cstr, &argv_refs, &envp_refs);
+                }
+            }
+        }
         std::process::exit(127);
     }
 
@@ -242,12 +290,10 @@ impl Executor {
             // SAFETY: Rush is single-threaded; each child exits immediately.
             match unsafe { fork() } {
                 Ok(ForkResult::Child) => {
-                    // Reset SIGINT to default so Ctrl+C kills this child.
                     let sa = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
                     let _ = unsafe { sigaction(Signal::SIGINT, &sa) };
 
                     if i > 0 {
-                        // SAFETY: fd 0 is always open; we forget to prevent drop from closing.
                         let mut stdin_fd =
                             unsafe { std::os::fd::OwnedFd::from_raw_fd(nix::libc::STDIN_FILENO) };
                         if nix::unistd::dup2(&pipes[i - 1].0, &mut stdin_fd).is_err() {
@@ -265,7 +311,6 @@ impl Executor {
                     }
                     drop(pipes);
 
-                    // External commands: exec directly (no fork inside fork).
                     if matches!(self.resolve(&commands[i].name), ExecutionFrom::External(_)) {
                         self.exec_external(&commands[i]);
                     }
@@ -295,7 +340,6 @@ impl Executor {
     }
 
     /// Lookup and execute a builtin or plugin (no PATH search).
-    /// Used by pipe children when the command is not external.
     fn lookup_and_execute(&self, command: Command) -> CommandResult {
         match self.resolve(&command.name) {
             ExecutionFrom::Builtin => self.builtin_reg.execute(command),
@@ -310,7 +354,6 @@ impl Executor {
 
 // ── helpers ───────────────────────────────────────────────────────────
 
-/// Default fd for a redirect operator (when no explicit fd is given).
 fn default_redirect_fd(op: &crate::types::RedirectOp) -> i32 {
     match op {
         crate::types::RedirectOp::Less
@@ -321,7 +364,6 @@ fn default_redirect_fd(op: &crate::types::RedirectOp) -> i32 {
     }
 }
 
-/// Apply redirects in a forked child. Opens files and dup2's them.
 fn apply_redirects_for_child(redirects: &[crate::types::Redirect]) {
     use std::fs::{File, OpenOptions};
     use std::os::fd::IntoRawFd;
@@ -355,51 +397,26 @@ fn apply_redirects_for_child(redirects: &[crate::types::Redirect]) {
     }
 }
 
-/// Save original fds, apply redirects, return saved state for restore.
 fn save_and_apply_redirects(redirects: &[crate::types::Redirect]) -> Vec<(i32, OwnedFd)> {
     let mut saved = Vec::new();
     for r in redirects {
         let src = r.src_fd.unwrap_or_else(|| default_redirect_fd(&r.op));
-        // Save the original fd before overwriting it.
         if let Ok(dup) = nix::unistd::dup(raw_fd(src)) {
             saved.push((src, dup));
         }
     }
-    // Now apply redirects (same logic as for child).
     apply_redirects_for_child(redirects);
     saved
 }
 
-/// Restore original fds after a plugin/builtin ran with redirects.
 fn restore_redirect_fds(saved: Vec<(i32, OwnedFd)>) {
     for (src, saved_fd) in saved {
         let mut target = unsafe { OwnedFd::from_raw_fd(src) };
         let _ = nix::unistd::dup2(&saved_fd, &mut target);
         std::mem::forget(target);
-        // saved_fd dropped here — closes the dup.
     }
 }
 
-/// Search PATH for an executable named `name`.
-fn find_in_path(name: &str) -> Option<PathBuf> {
-    let path_var = std::env::var("PATH").ok()?;
-    for dir in path_var.split(':') {
-        if dir.is_empty() {
-            continue;
-        }
-        let candidate = PathBuf::from(dir).join(name);
-        if let Ok(meta) = std::fs::metadata(&candidate)
-            && meta.is_file()
-            && meta.permissions().mode() & 0o111 != 0
-        {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-/// Build argc/argv from a Command for execvp / execv.
-/// Returns (program_name, owned_CStrings).
 fn build_argv(command: &Command) -> (CString, Vec<CString>) {
     let prog = CString::new(command.name.as_str()).unwrap_or_default();
     let mut argv: Vec<CString> = Vec::with_capacity(1 + command.args.len());
@@ -410,8 +427,6 @@ fn build_argv(command: &Command) -> (CString, Vec<CString>) {
     (prog, argv)
 }
 
-/// Write a byte slice to a raw fd.
-/// Retries on EINTR, returns true if all bytes were written.
 fn write_all(fd: RawFd, mut data: &[u8]) -> bool {
     use nix::errno::Errno;
     let fd_borrowed = raw_fd(fd);
@@ -437,20 +452,18 @@ fn print_result(result: &CommandResult) {
     }
 }
 
-/// Create a `BorrowedFd` from a raw fd number.
 fn raw_fd(fd: RawFd) -> BorrowedFd<'static> {
-    // SAFETY: fd is a valid open file descriptor (standard fds or our own).
     unsafe { BorrowedFd::borrow_raw(fd) }
 }
 
 pub fn init_module(
     builtin_reg: BuiltinsRegistry,
     plugin_reg: PluginRegistry,
+    vars: Rc<VarStore>,
 ) -> anyhow::Result<Executor> {
-    // Ignore SIGINT in the shell so Ctrl+C only kills foreground children.
     let sa = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
     unsafe { sigaction(Signal::SIGINT, &sa) }.map_err(|e| anyhow::anyhow!("sigaction: {e}"))?;
 
-    let executor = Executor::new(builtin_reg, plugin_reg);
+    let executor = Executor::new(builtin_reg, plugin_reg, vars);
     Ok(executor)
 }

@@ -7,7 +7,8 @@ fn setup() -> Executor {
     let env = rush_core::env::init_module(&user_dirs).unwrap();
     let builtins = rush_core::shell_builtins::init_module().unwrap();
     let plugins = rush_core::plugin::init_module(&env).unwrap();
-    Executor::new(builtins, plugins)
+    let vars = std::rc::Rc::new(rush_core::var::VarStore::default());
+    Executor::new(builtins, plugins, vars)
 }
 
 /// Run a pipe list and capture what gets written to stdout.
