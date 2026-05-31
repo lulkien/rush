@@ -1,9 +1,12 @@
-use std::os::fd::{BorrowedFd, OwnedFd, RawFd};
+use std::os::fd::{BorrowedFd, FromRawFd, OwnedFd, RawFd};
 
 use dashmap::DashMap;
 use nix::{
     fcntl::{FcntlArg, FdFlag, fcntl},
-    sys::wait::{waitpid, WaitStatus},
+    sys::{
+        signal::{Signal, SigHandler, sigaction, SaFlags, SigAction, SigSet},
+        wait::{waitpid, WaitStatus},
+    },
     unistd::{ForkResult, Pid, fork, pipe, write},
 };
 use rush_interface::ExecResult;
@@ -163,21 +166,29 @@ impl Executor {
         }
 
         let mut pids: Vec<Pid> = Vec::with_capacity(n);
-        // Borrow raw stdin/stdout once for reuse across loop iterations.
-        let stdin_fd = raw_fd(nix::libc::STDIN_FILENO);
-        let stdout_fd = raw_fd(nix::libc::STDOUT_FILENO);
 
         for i in 0..n {
             // SAFETY: Rush is single-threaded; each child exits immediately.
             match unsafe { fork() } {
                 Ok(ForkResult::Child) => {
+                    // Reset SIGINT to default so Ctrl+C kills this child.
+                    let sa = SigAction::new(SigHandler::SigDfl, SaFlags::empty(), SigSet::empty());
+                    let _ = unsafe { sigaction(Signal::SIGINT, &sa) };
+
                     if i > 0 {
-                        let mut target = nix::unistd::dup(stdin_fd).expect("dup stdin");
-                        nix::unistd::dup2(&pipes[i - 1].0, &mut target).expect("dup2 stdin");
+                        // SAFETY: fd 0 is always open; we forget to prevent drop from closing.
+                        let mut stdin_fd =
+                            unsafe { std::os::fd::OwnedFd::from_raw_fd(nix::libc::STDIN_FILENO) };
+                        nix::unistd::dup2(&pipes[i - 1].0, &mut stdin_fd)
+                            .expect("dup2 stdin");
+                        std::mem::forget(stdin_fd);
                     }
                     if i < n - 1 {
-                        let mut target = nix::unistd::dup(stdout_fd).expect("dup stdout");
-                        nix::unistd::dup2(&pipes[i].1, &mut target).expect("dup2 stdout");
+                        let mut stdout_fd =
+                            unsafe { std::os::fd::OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO) };
+                        nix::unistd::dup2(&pipes[i].1, &mut stdout_fd)
+                            .expect("dup2 stdout");
+                        std::mem::forget(stdout_fd);
                     }
                     drop(pipes);
 
@@ -237,6 +248,10 @@ pub fn init_module(
     builtin_reg: BuiltinsRegistry,
     plugin_reg: PluginRegistry,
 ) -> anyhow::Result<Executor> {
+    // Ignore SIGINT in the shell so Ctrl+C only kills foreground children.
+    let sa = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
+    unsafe { sigaction(Signal::SIGINT, &sa) }.map_err(|e| anyhow::anyhow!("sigaction: {e}"))?;
+
     let executor = Executor::new(builtin_reg, plugin_reg);
     Ok(executor)
 }
