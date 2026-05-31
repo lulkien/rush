@@ -860,14 +860,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "false"
-version = "0.1.0"
-dependencies = [
- "abi_stable",
- "rush-plugin",
-]
-
-[[package]]
 name = "fancy-regex"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2712,14 +2704,6 @@ dependencies = [
  "sharded-slab",
  "thread_local",
  "tracing-core",
-]
-
-[[package]]
-name = "true"
-version = "0.1.0"
-dependencies = [
- "abi_stable",
- "rush-plugin",
 ]
 
 [[package]]
