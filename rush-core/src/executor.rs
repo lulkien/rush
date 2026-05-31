@@ -133,7 +133,7 @@ impl Executor {
             match self.resolve(&command.name) {
                 ExecutionFrom::Builtin => {
                     let saved = save_and_apply_redirects(&redirects);
-                    let result = self.builtin_reg.execute(command);
+                    let result = self.builtin_reg.execute(command, &*self.vars);
                     print_result(&result);
                     restore_redirect_fds(saved);
                     return result;
@@ -154,7 +154,7 @@ impl Executor {
         }
 
         match self.resolve(&command.name) {
-            ExecutionFrom::Builtin => self.builtin_reg.execute(command),
+            ExecutionFrom::Builtin => self.builtin_reg.execute(command, &*self.vars),
             ExecutionFrom::Plugin => self.plugin_reg.execute(command),
             ExecutionFrom::External(_path) => self.execute_external_single(command),
             ExecutionFrom::NotFound => CommandResult::new(
@@ -342,7 +342,7 @@ impl Executor {
     /// Lookup and execute a builtin or plugin (no PATH search).
     fn lookup_and_execute(&self, command: Command) -> CommandResult {
         match self.resolve(&command.name) {
-            ExecutionFrom::Builtin => self.builtin_reg.execute(command),
+            ExecutionFrom::Builtin => self.builtin_reg.execute(command, &*self.vars),
             ExecutionFrom::Plugin => self.plugin_reg.execute(command),
             _ => CommandResult::new(
                 127,

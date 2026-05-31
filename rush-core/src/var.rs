@@ -5,43 +5,63 @@
 //! - Expansion joins parts with `:` to produce the expanded string.
 //! - `$?` reads from the special `?` key (updated via `set_exit_code`).
 
+use std::cell::RefCell;
+use std::collections::HashSet;
+
 use dashmap::DashMap;
 
 #[derive(Default)]
-pub struct VarStore(DashMap<String, Vec<String>>);
+pub struct VarStore {
+    vars: DashMap<String, Vec<String>>,
+    /// Set of explicitly exported variable names.
+    /// If empty, all variables are exported (default behavior).
+    exported: RefCell<HashSet<String>>,
+}
 
 impl VarStore {
-    /// Get the full value list for a variable.
+    // ── basic ops ────────────────────────────────────────────────
+
     pub fn get(&self, name: &str) -> Vec<String> {
-        self.0
+        self.vars
             .get(name)
             .map(|r| r.value().clone())
             .unwrap_or_default()
     }
 
-    /// Set a variable (overwrites if it exists).
     pub fn set(&self, name: &str, value: Vec<String>) {
-        self.0.insert(name.to_string(), value);
+        self.vars.insert(name.to_string(), value);
     }
 
-    /// Set a variable from a colon-separated string (e.g. `PATH=/a:/b`).
     pub fn set_colon(&self, name: &str, value: &str) {
         let parts: Vec<String> = value.split(':').map(String::from).collect();
         self.set(name, parts);
     }
 
-    /// Unset a variable.
     pub fn unset(&self, name: &str) -> Option<(String, Vec<String>)> {
-        self.0.remove(name)
+        self.exported.borrow_mut().remove(name);
+        self.vars.remove(name)
     }
 
-    /// Update the `$?` exit code.
     pub fn set_exit_code(&self, code: i32) {
         self.set("?", vec![code.to_string()]);
     }
 
-    /// Expand a variable: join all parts with `:`.
-    /// Returns empty string if the variable is not set.
+    // ── export ───────────────────────────────────────────────────
+
+    /// Mark a variable as exported.
+    pub fn export(&self, name: &str) {
+        self.exported.borrow_mut().insert(name.to_string());
+    }
+
+    /// Check if a variable is exported.
+    /// If nothing has been explicitly exported, all vars are exported.
+    pub fn is_exported(&self, name: &str) -> bool {
+        let exported = self.exported.borrow();
+        exported.is_empty() || exported.contains(name)
+    }
+
+    // ── expansion ────────────────────────────────────────────────
+
     pub fn expand(&self, name: &str) -> String {
         let parts = self.get(name);
         if parts.is_empty() {
@@ -51,9 +71,6 @@ impl VarStore {
         }
     }
 
-    /// Expand `$VAR` references in a string.
-    /// Supports: `$VAR`, `${VAR}`, `$?` (exit status), `$$` (pid).
-    /// `$?` reads from the `?` variable (set via `set_exit_code`).
     pub fn expand_string(&self, input: &str) -> String {
         let mut result = String::with_capacity(input.len());
         let mut chars = input.chars().peekable();
@@ -70,7 +87,7 @@ impl VarStore {
                         result.push_str(&self.expand("?"));
                     }
                     Some('{') => {
-                        chars.next(); // consume '{'
+                        chars.next();
                         let mut name = String::new();
                         while let Some(&nc) = chars.peek() {
                             if nc == '}' {
@@ -99,7 +116,6 @@ impl VarStore {
                         result.push_str(&self.expand(&name));
                     }
                     _ => {
-                        // Lonely $ at end of string or before non-name char — literal.
                         result.push('$');
                     }
                 }
@@ -111,25 +127,29 @@ impl VarStore {
         result
     }
 
-    /// Build an environment array for execve (KEY=VALUE format).
+    // ── environment ──────────────────────────────────────────────
+
     pub fn build_env_array(&self) -> Vec<std::ffi::CString> {
-        self.0
+        self.vars
             .iter()
-            .filter(|entry| entry.key() != "?") // skip $? (internal)
+            .filter(|entry| entry.key() != "?" && self.is_exported(entry.key()))
             .map(|entry| {
                 let pair = format!("{}={}", entry.key(), entry.value().join(":"));
                 std::ffi::CString::new(pair).unwrap_or_default()
             })
             .collect()
     }
-    #[allow(unused)]
+
     pub fn contains(&self, name: &str) -> bool {
-        self.0.contains_key(name)
+        self.vars.contains_key(name)
     }
 
-    /// Return all variable names (for export / debugging).
-    #[allow(unused)]
-    pub fn names(&self) -> Vec<String> {
-        self.0.iter().map(|e| e.key().clone()).collect()
+    /// Return names of all exported variables (for `export` listing).
+    pub fn exported_names(&self) -> Vec<String> {
+        self.vars
+            .iter()
+            .filter(|e| e.key() != "?" && self.is_exported(e.key()))
+            .map(|e| e.key().clone())
+            .collect()
     }
 }

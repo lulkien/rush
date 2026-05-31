@@ -33,7 +33,7 @@ impl BuiltinCommand for Command {
         eprintln!("{}", env!("CARGO_PKG_VERSION"));
     }
 
-    fn execute(&self, args: Vec<String>) -> CommandResult {
+    fn execute(&self, args: Vec<String>, _vars: &crate::var::VarStore) -> CommandResult {
         let dir = if args.is_empty() {
             std::env::var("HOME").unwrap_or_else(|_| "/".to_string())
         } else if args[0] == "-h" || args[0] == "--help" {

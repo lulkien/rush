@@ -8,7 +8,9 @@ use rush_interface::CommandResult;
 use crate::types::{Command, DashRegistry};
 
 mod cd;
+mod export;
 mod history_search;
+mod unset;
 
 #[allow(unused)]
 pub trait BuiltinCommand: Send + Sync {
@@ -16,7 +18,7 @@ pub trait BuiltinCommand: Send + Sync {
     fn print_desc(&self);
     fn print_help(&self);
     fn print_version(&self);
-    fn execute(&self, args: Vec<String>) -> CommandResult;
+    fn execute(&self, args: Vec<String>, vars: &crate::var::VarStore) -> CommandResult;
 }
 
 type RegistryTypeRaw = Box<dyn BuiltinCommand>;
@@ -51,9 +53,9 @@ impl DashRegistry<RegistryTypeRaw> for BuiltinsRegistry {
 }
 
 impl BuiltinsRegistry {
-    pub fn execute(&self, command: Command) -> CommandResult {
+    pub fn execute(&self, command: Command, vars: &crate::var::VarStore) -> CommandResult {
         match self.get(&command.name) {
-            Ok(command_entry) => command_entry.as_ref().borrow().execute(command.args),
+            Ok(command_entry) => command_entry.as_ref().borrow().execute(command.args, vars),
             Err(e) => CommandResult::new(1, format!("{e}").as_str()),
         }
     }
@@ -71,8 +73,16 @@ pub fn init_module() -> anyhow::Result<BuiltinsRegistry> {
         Rc::new(RefCell::new(Box::new(cd::Command {}))),
     );
     builtin_registry.register(
+        "export",
+        Rc::new(RefCell::new(Box::new(export::Command {}))),
+    );
+    builtin_registry.register(
         "history-search",
         Rc::new(RefCell::new(Box::new(history_search::Command {}))),
+    );
+    builtin_registry.register(
+        "unset",
+        Rc::new(RefCell::new(Box::new(unset::Command {}))),
     );
 
     Ok(builtin_registry)

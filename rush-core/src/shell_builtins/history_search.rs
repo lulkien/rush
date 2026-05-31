@@ -29,7 +29,7 @@ impl BuiltinCommand for Command {
         eprintln!("{}", env!("CARGO_PKG_VERSION"));
     }
 
-    fn execute(&self, _args: Vec<String>) -> CommandResult {
+    fn execute(&self, _args: Vec<String>, _vars: &crate::var::VarStore) -> CommandResult {
         // This builtin is special — the REPL loop detects it and handles
         // it by calling the InputHandler's history_search method.
         // When reached via the normal executor path, just print a message.
