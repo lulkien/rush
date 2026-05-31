@@ -19,14 +19,14 @@ fn main() {
 
     if let Some(cmd) = cli.command {
         // rush -c "echo hello"
-        let (_user_dirs, executor) = match init_runtime() {
+        let (_user_dirs, executor, vars) = match init_runtime() {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("rush: {e}");
                 std::process::exit(1);
             }
         };
-        if let Err(e) = execute_string(&executor, &cmd) {
+        if let Err(e) = execute_string(&executor, &vars, &cmd) {
             eprintln!("rush: {e}");
             std::process::exit(1);
         }
