@@ -129,7 +129,9 @@ pub fn execute(args: RVec<RString>) -> CommandResult {
         output.push('\n');
     }
 
-    CommandResult::new(0, &output)
+    print!("{output}");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    CommandResult::new(0, "")
 }
 
 #[load]

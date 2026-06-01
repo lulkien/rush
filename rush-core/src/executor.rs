@@ -89,11 +89,8 @@ impl Executor {
                 let cmd = commands[0];
                 match &cmd.kind {
                     CommandKind::Simple => {
-                        let result = self.execute_single(cmd.clone());
-                        if cmd.redirects.is_empty() {
-                            print_result(&result);
-                        }
-                        result
+                        
+                        self.execute_single(cmd.clone())
                     }
                     _ => {
                         eprintln!("rush: compound commands not yet implemented in executor");
@@ -134,14 +131,12 @@ impl Executor {
                 ExecutionFrom::Builtin => {
                     let saved = save_and_apply_redirects(&redirects);
                     let result = self.builtin_reg.execute(command, &self.vars);
-                    print_result(&result);
                     restore_redirect_fds(saved);
                     return result;
                 }
                 ExecutionFrom::Plugin => {
                     let saved = save_and_apply_redirects(&redirects);
                     let result = self.plugin_reg.execute(command);
-                    print_result(&result);
                     restore_redirect_fds(saved);
                     return result;
                 }

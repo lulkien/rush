@@ -8,9 +8,14 @@ use rush_interface::CommandResult;
 use crate::types::{Command, DashRegistry};
 
 mod cd;
-mod export;
+mod getenv;
 mod history_search;
-mod unset;
+mod len;
+mod print;
+mod replace;
+mod setenv;
+mod strip;
+mod substr;
 
 #[allow(unused)]
 pub trait BuiltinCommand: Send + Sync {
@@ -73,16 +78,36 @@ pub fn init_module() -> anyhow::Result<BuiltinsRegistry> {
         Rc::new(RefCell::new(Box::new(cd::Command {}))),
     );
     builtin_registry.register(
-        "export",
-        Rc::new(RefCell::new(Box::new(export::Command {}))),
+        "getenv",
+        Rc::new(RefCell::new(Box::new(getenv::Command {}))),
     );
     builtin_registry.register(
         "history-search",
         Rc::new(RefCell::new(Box::new(history_search::Command {}))),
     );
     builtin_registry.register(
-        "unset",
-        Rc::new(RefCell::new(Box::new(unset::Command {}))),
+        "len",
+        Rc::new(RefCell::new(Box::new(len::Command {}))),
+    );
+    builtin_registry.register(
+        "print",
+        Rc::new(RefCell::new(Box::new(print::Command {}))),
+    );
+    builtin_registry.register(
+        "replace",
+        Rc::new(RefCell::new(Box::new(replace::Command {}))),
+    );
+    builtin_registry.register(
+        "setenv",
+        Rc::new(RefCell::new(Box::new(setenv::Command {}))),
+    );
+    builtin_registry.register(
+        "strip",
+        Rc::new(RefCell::new(Box::new(strip::Command {}))),
+    );
+    builtin_registry.register(
+        "substr",
+        Rc::new(RefCell::new(Box::new(substr::Command {}))),
     );
 
     Ok(builtin_registry)
