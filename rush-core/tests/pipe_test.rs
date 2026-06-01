@@ -1,6 +1,6 @@
 /// Integration test for pipe output correctness.
 use rush_core::executor::Executor;
-use rush_core::types::{Command, CommandPipe, CommandPipeList};
+use rush_core::types::{Command, Pipeline};
 
 fn setup() -> Executor {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
@@ -13,8 +13,8 @@ fn setup() -> Executor {
     Executor::new(builtins, plugins, vars)
 }
 
-/// Run a pipe list and capture what gets written to stdout.
-fn capture_stdout(executor: &Executor, pipe_list: CommandPipeList) -> String {
+/// Run a pipeline and capture stdout.
+fn capture_stdout(executor: &Executor, pipeline: &Pipeline) -> String {
     use nix::unistd;
     use std::io::Read;
     use std::os::fd::{BorrowedFd, FromRawFd, OwnedFd};
@@ -27,31 +27,12 @@ fn capture_stdout(executor: &Executor, pipe_list: CommandPipeList) -> String {
 
     let (r, w) = unistd::pipe().expect("pipe failed");
     let saved = unistd::dup(stdout).expect("dup stdout");
-    // SAFETY: fd 1 is always open; we mem::forget to prevent drop from closing it.
     let mut stdout_fd = unsafe { OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO) };
     unistd::dup2(&w, &mut stdout_fd).expect("dup2 stdout → pipe");
     std::mem::forget(stdout_fd);
     drop(w);
 
-    let program = rush_core::types::Program {
-        items: pipe_list
-            .into_iter()
-            .map(|pipe| {
-                let commands: Vec<Command> = pipe.into_iter().collect();
-                rush_core::types::CompleteCommand {
-                    list: rush_core::types::AndOrList {
-                        first: rush_core::types::Pipeline {
-                            negation: false,
-                            commands,
-                        },
-                        rest: vec![],
-                    },
-                    background: false,
-                }
-            })
-            .collect(),
-    };
-    executor.execute_program(&program);
+    executor.execute_pipeline(pipeline);
 
     let mut stdout_fd = unsafe { OwnedFd::from_raw_fd(nix::libc::STDOUT_FILENO) };
     unistd::dup2(&saved, &mut stdout_fd).expect("restore stdout");
@@ -73,77 +54,78 @@ fn make_cmd(name: &str, args: &[&str]) -> Command {
     cmd
 }
 
-fn single_pipe_list(pipe: CommandPipe) -> CommandPipeList {
-    let mut list = CommandPipeList::new();
-    list.append_pipe(pipe);
-    list
-}
-
 #[test]
 fn test_echo_hello() {
     let executor = setup();
-    let mut pipe = CommandPipe::new();
-    pipe.append_command(make_cmd("echo", &["hello"]));
-
-    let output = capture_stdout(&executor, single_pipe_list(pipe));
+    let pipeline = Pipeline {
+        negation: false,
+        commands: vec![make_cmd("echo", &["hello"])],
+    };
+    let output = capture_stdout(&executor, &pipeline);
     assert_eq!(output, "hello\n", "got: {output:?}");
 }
 
 #[test]
 fn test_echo_hello_pipe_cat() {
     let executor = setup();
-
-    let mut pipe = CommandPipe::new();
-    pipe.append_command(make_cmd("echo", &["hello"]));
-    pipe.append_command(make_cmd("cat", &[]));
-
-    let output = capture_stdout(&executor, single_pipe_list(pipe));
+    let pipeline = Pipeline {
+        negation: false,
+        commands: vec![
+            make_cmd("echo", &["hello"]),
+            make_cmd("cat", &[]),
+        ],
+    };
+    let output = capture_stdout(&executor, &pipeline);
     assert_eq!(output, "hello\n", "got: {output:?}");
 }
 
 #[test]
 fn test_echo_no_trailing_newline() {
     let executor = setup();
-
-    let mut pipe = CommandPipe::new();
-    pipe.append_command(make_cmd("echo", &["-n", "hello"]));
-
-    let output = capture_stdout(&executor, single_pipe_list(pipe));
+    let pipeline = Pipeline {
+        negation: false,
+        commands: vec![make_cmd("echo", &["-n", "hello"])],
+    };
+    let output = capture_stdout(&executor, &pipeline);
     assert_eq!(output, "hello\n", "got: {output:?}");
 }
 
 #[test]
 fn test_pipe_three_commands() {
     let executor = setup();
-
-    let mut pipe = CommandPipe::new();
-    pipe.append_command(make_cmd("echo", &["hello"]));
-    pipe.append_command(make_cmd("cat", &[]));
-    pipe.append_command(make_cmd("cat", &[]));
-
-    let output = capture_stdout(&executor, single_pipe_list(pipe));
+    let pipeline = Pipeline {
+        negation: false,
+        commands: vec![
+            make_cmd("echo", &["hello"]),
+            make_cmd("cat", &[]),
+            make_cmd("cat", &[]),
+        ],
+    };
+    let output = capture_stdout(&executor, &pipeline);
     assert_eq!(output, "hello\n", "got: {output:?}");
 }
 
 #[test]
 fn test_pipe_with_echo_n() {
     let executor = setup();
-
-    let mut pipe = CommandPipe::new();
-    pipe.append_command(make_cmd("echo", &["-n", "hello"]));
-    pipe.append_command(make_cmd("cat", &[]));
-
-    let output = capture_stdout(&executor, single_pipe_list(pipe));
+    let pipeline = Pipeline {
+        negation: false,
+        commands: vec![
+            make_cmd("echo", &["-n", "hello"]),
+            make_cmd("cat", &[]),
+        ],
+    };
+    let output = capture_stdout(&executor, &pipeline);
     assert_eq!(output, "hello\n", "got: {output:?}");
 }
 
 #[test]
 fn test_echo_empty() {
     let executor = setup();
-
-    let mut pipe = CommandPipe::new();
-    pipe.append_command(make_cmd("echo", &["-n"]));
-
-    let output = capture_stdout(&executor, single_pipe_list(pipe));
+    let pipeline = Pipeline {
+        negation: false,
+        commands: vec![make_cmd("echo", &["-n"])],
+    };
+    let output = capture_stdout(&executor, &pipeline);
     assert_eq!(output, "", "got: {output:?}");
 }
