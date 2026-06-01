@@ -49,20 +49,43 @@ fn expand_command(cmd: &mut types::Command, vars: &VarStore) {
             continue;
         }
         let expanded = vars.expand_string(arg);
-        if expanded != **arg {
-            *arg = expanded;
-        }
-        // Globbing: expand *.rs etc. into matching filenames.
-        if glob::has_glob_chars(arg) {
-            let matches = glob::glob_expand(arg);
-            for m in matches {
-                new_args.push(m);
+        *arg = expanded;
+
+        // Word splitting on IFS (default: whitespace).
+        let parts = split_on_ifs(arg);
+        for part in parts {
+            // Globbing on each split word.
+            if glob::has_glob_chars(&part) {
+                let matches = glob::glob_expand(&part);
+                for m in matches {
+                    new_args.push(m);
+                }
+            } else {
+                new_args.push(part);
             }
-        } else {
-            new_args.push(std::mem::take(arg));
         }
     }
     cmd.args = new_args;
+}
+
+/// Split a string on IFS characters (space, tab, newline by default).
+/// Consecutive IFS characters are collapsed (POSIX default behavior).
+fn split_on_ifs(s: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    for c in s.chars() {
+        if c == ' ' || c == '\t' || c == '\n' {
+            if !current.is_empty() {
+                parts.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(c);
+        }
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    parts
 }
 
 /// Parse and execute a string of shell source.
