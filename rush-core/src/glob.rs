@@ -67,7 +67,7 @@ pub fn glob_expand(pattern: &str) -> Vec<String> {
 
 /// Match a single path component against a glob pattern.
 /// Supports `*` (any sequence), `?` (any single char), `[...]` (character class).
-fn glob_match(pattern: &str, name: &str) -> bool {
+pub fn glob_match(pattern: &str, name: &str) -> bool {
     let pat: Vec<char> = pattern.chars().collect();
     let nam: Vec<char> = name.chars().collect();
     glob_match_slice(&pat, &nam, 0, 0)
@@ -153,6 +153,59 @@ fn glob_match_slice(pat: &[char], nam: &[char], pi: usize, ni: usize) -> bool {
     ni == nam.len()
 }
 
+/// Remove the shortest prefix of `value` that matches `pattern` (glob).
+/// Used for `${VAR#pattern}`.
+pub fn remove_shortest_prefix(value: &str, pattern: &str) -> String {
+    for i in 0..=value.len() {
+        if glob_match(pattern, &value[..i]) {
+            return value[i..].to_string();
+        }
+    }
+    value.to_string()
+}
+
+/// Remove the longest prefix of `value` that matches `pattern` (glob).
+/// Used for `${VAR##pattern}`.
+pub fn remove_longest_prefix(value: &str, pattern: &str) -> String {
+    let mut last_match = None;
+    for i in 0..=value.len() {
+        if glob_match(pattern, &value[..i]) {
+            last_match = Some(i);
+        }
+    }
+    match last_match {
+        Some(i) => value[i..].to_string(),
+        None => value.to_string(),
+    }
+}
+
+/// Remove the shortest suffix of `value` that matches `pattern` (glob).
+/// Used for `${VAR%pattern}`.
+/// Note: does not consider the full value as a suffix (bash-compatible).
+pub fn remove_shortest_suffix(value: &str, pattern: &str) -> String {
+    // Check proper suffixes only: from shortest (rightmost) to longest.
+    // Skip i = value.len() (empty suffix) and i = 0 (full value).
+    for i in (1..value.len()).rev() {
+        if glob_match(pattern, &value[i..]) {
+            return value[..i].to_string();
+        }
+    }
+    value.to_string()
+}
+
+/// Remove the longest suffix of `value` that matches `pattern` (glob).
+/// Used for `${VAR%%pattern}`.
+pub fn remove_longest_suffix(value: &str, pattern: &str) -> String {
+    // Check suffixes from longest (full value) to shortest.
+    // Includes full value (bash-compatible: %%*.txt on hello.txt → "").
+    for i in 0..value.len() {
+        if glob_match(pattern, &value[i..]) {
+            return value[..i].to_string();
+        }
+    }
+    value.to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,5 +246,28 @@ mod tests {
         assert!(has_glob_chars("foo?"));
         assert!(has_glob_chars("[ab]"));
         assert!(!has_glob_chars("hello"));
+    }
+
+    #[test]
+    fn test_remove_shortest_prefix() {
+        assert_eq!(remove_shortest_prefix("abc/def/ghi.txt", "*/"), "def/ghi.txt");
+        assert_eq!(remove_shortest_prefix("file.txt", "f*"), "ile.txt");
+    }
+
+    #[test]
+    fn test_remove_longest_prefix() {
+        assert_eq!(remove_longest_prefix("abc/def/ghi.txt", "*/"), "ghi.txt");
+        // "f*" matches "file.txt" entirely — full value is a valid prefix match.
+        assert_eq!(remove_longest_prefix("file.txt", "f*"), "");
+    }
+
+    #[test]
+    fn test_remove_shortest_suffix() {
+        assert_eq!(remove_shortest_suffix("abc/def/ghi.txt", "/*.txt"), "abc/def");
+    }
+
+    #[test]
+    fn test_remove_longest_suffix() {
+        assert_eq!(remove_longest_suffix("abc/def/ghi.txt", "/*.txt"), "abc");
     }
 }

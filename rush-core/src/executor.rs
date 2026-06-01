@@ -133,7 +133,7 @@ impl Executor {
             match self.resolve(&command.name) {
                 ExecutionFrom::Builtin => {
                     let saved = save_and_apply_redirects(&redirects);
-                    let result = self.builtin_reg.execute(command, &*self.vars);
+                    let result = self.builtin_reg.execute(command, &self.vars);
                     print_result(&result);
                     restore_redirect_fds(saved);
                     return result;
@@ -154,7 +154,7 @@ impl Executor {
         }
 
         match self.resolve(&command.name) {
-            ExecutionFrom::Builtin => self.builtin_reg.execute(command, &*self.vars),
+            ExecutionFrom::Builtin => self.builtin_reg.execute(command, &self.vars),
             ExecutionFrom::Plugin => self.plugin_reg.execute(command),
             ExecutionFrom::External(_path) => self.execute_external_single(command),
             ExecutionFrom::NotFound => CommandResult::new(
@@ -223,15 +223,13 @@ impl Executor {
                 apply_redirects_for_child(&command.redirects);
 
                 // Look up cached path for execve.
-                if let Some(entry) = self.entry_point_cache.get(command.name.as_str()) {
-                    if let ExecutionFrom::External(ref p) = *entry.value() {
-                        if let Ok(path_cstr) = CString::new(p.to_str().unwrap_or("")) {
+                if let Some(entry) = self.entry_point_cache.get(command.name.as_str())
+                    && let ExecutionFrom::External(ref p) = *entry.value()
+                        && let Ok(path_cstr) = CString::new(p.to_str().unwrap_or("")) {
                             let envp_refs: Vec<&std::ffi::CStr> =
                                 envp.iter().map(|s| s.as_c_str()).collect();
                             let _ = nix::unistd::execve(&path_cstr, &argv_refs, &envp_refs);
                         }
-                    }
-                }
                 std::process::exit(127);
             }
             Ok(ForkResult::Parent { child }) => match waitpid(child, None) {
@@ -255,15 +253,13 @@ impl Executor {
 
         apply_redirects_for_child(&command.redirects);
 
-        if let Some(entry) = self.entry_point_cache.get(command.name.as_str()) {
-            if let ExecutionFrom::External(ref p) = *entry.value() {
-                if let Ok(path_cstr) = CString::new(p.to_str().unwrap_or("")) {
+        if let Some(entry) = self.entry_point_cache.get(command.name.as_str())
+            && let ExecutionFrom::External(ref p) = *entry.value()
+                && let Ok(path_cstr) = CString::new(p.to_str().unwrap_or("")) {
                     let envp_refs: Vec<&std::ffi::CStr> =
                         envp.iter().map(|s| s.as_c_str()).collect();
                     let _ = nix::unistd::execve(&path_cstr, &argv_refs, &envp_refs);
                 }
-            }
-        }
         std::process::exit(127);
     }
 
@@ -342,7 +338,7 @@ impl Executor {
     /// Lookup and execute a builtin or plugin (no PATH search).
     fn lookup_and_execute(&self, command: Command) -> CommandResult {
         match self.resolve(&command.name) {
-            ExecutionFrom::Builtin => self.builtin_reg.execute(command, &*self.vars),
+            ExecutionFrom::Builtin => self.builtin_reg.execute(command, &self.vars),
             ExecutionFrom::Plugin => self.plugin_reg.execute(command),
             _ => CommandResult::new(
                 127,
