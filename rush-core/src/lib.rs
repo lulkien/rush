@@ -11,6 +11,7 @@ use crate::var::VarStore;
 pub use rush_interface::CommandResult;
 
 pub mod executor;
+pub mod glob;
 pub mod lexer;
 pub mod parser;
 pub mod plugin;
@@ -39,16 +40,29 @@ fn expand_command(cmd: &mut types::Command, vars: &VarStore) {
     if expanded_name != *cmd.name {
         cmd.name = expanded_name.to_string();
     }
+
+    let mut new_args: Vec<String> = Vec::with_capacity(cmd.args.len());
     for arg in cmd.args.iter_mut() {
         if arg.starts_with('\x01') {
             *arg = arg[1..].to_string();
+            new_args.push(std::mem::take(arg));
             continue;
         }
         let expanded = vars.expand_string(arg);
         if expanded != **arg {
-            *arg = expanded.to_string();
+            *arg = expanded;
+        }
+        // Globbing: expand *.rs etc. into matching filenames.
+        if glob::has_glob_chars(arg) {
+            let matches = glob::glob_expand(arg);
+            for m in matches {
+                new_args.push(m);
+            }
+        } else {
+            new_args.push(std::mem::take(arg));
         }
     }
+    cmd.args = new_args;
 }
 
 /// Parse and execute a string of shell source.
